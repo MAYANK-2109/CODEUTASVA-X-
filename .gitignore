@@ -1,0 +1,14 @@
+# Secrets
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local data and model caches
+backend/data/cache/
+backend/data/chroma/
+
+.DS_Store
