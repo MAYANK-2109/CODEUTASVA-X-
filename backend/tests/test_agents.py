@@ -415,3 +415,68 @@ def test_insights_weather_includes_daily_values_and_thresholds(monkeypatch):
 
     monkeypatch.setattr(insights, "get_weather_outlook", lambda: None)
     assert TestClient(app).get("/api/insights/weather").status_code == 503
+
+
+RELIANCE = [{"name": "Reliance Industries", "symbol": "RELIANCE", "units": 10, "type": "STOCK"}]
+JAMNAGAR = {"name": "Jamnagar", "relevance": "refining hub", "sectors": ["Energy"],
+            "regions": ["jamnagar", "gujarat"], "companies": {"RELIANCE": "Jamnagar refinery complex"},
+            "max_rain_mm": 140.0, "max_gust_kmh": 95.0, "max_temp_c": 31.0, "flags": [], "days": []}
+
+
+def reliance_closes() -> pd.DataFrame:
+    return synthetic_closes().rename(columns={"AAA.NS": "RELIANCE.NS"})
+
+
+def test_weather_alert_names_the_holdings_at_the_site(offline, monkeypatch):
+    offline(reliance_closes())
+    monkeypatch.setattr(nodes, "get_weather_outlook", lambda: [{**JAMNAGAR, "flags": ["heavy rain"]}])
+    answer = answer_for("Is my portfolio risky right now?", RELIANCE)
+    alert = next(e for e in answer["evidence"] if e["id"].startswith("W"))
+    assert "heavy rain" in alert["claim"]
+    assert "Reliance Industries (Jamnagar refinery complex)" in alert["claim"]
+
+
+def test_question_naming_a_region_links_it_to_holdings_without_an_alert(offline, monkeypatch):
+    offline(reliance_closes())
+    monkeypatch.setattr(nodes, "get_weather_outlook", lambda: [JAMNAGAR])
+    answer = answer_for("What if a cyclone hits the Gujarat coast?", RELIANCE)
+    claims = [e["claim"] for e in answer["evidence"] if e["id"].startswith("W")]
+    assert any("names the Jamnagar area" in c and "Reliance Industries (Jamnagar refinery complex)" in c for c in claims)
+
+    answer = answer_for("What if a cyclone hits the Gujarat coast?", HOLDING)
+    claims = [e["claim"] for e in answer["evidence"] if e["id"].startswith("W")]
+    assert any("None of your holdings has a mapped operation there" in c for c in claims)
+
+
+def test_prices_endpoint_maps_symbols_and_omits_unpriced(monkeypatch):
+    from app import api
+
+    monkeypatch.setattr(api, "get_latest_prices", lambda tickers: ({"RELIANCE.NS": 1167.7}, "now"))
+    body = TestClient(app).post("/api/prices", json={"symbols": ["RELIANCE", "NOSUCH", " "]}).json()
+    assert body == {"prices": {"RELIANCE": 1167.7}, "as_of": "now"}
+    assert TestClient(app).post("/api/prices", json={"symbols": []}).json() == {"prices": {}, "as_of": None}
+
+
+def test_history_retries_blank_tickers_and_rejects_a_missing_index(monkeypatch, tmp_path):
+    from app.tools import market
+
+    full = synthetic_closes()
+    blank_index = full.assign(**{NIFTY: float("nan")})
+    calls = []
+
+    def download(tickers, **kwargs):
+        calls.append(list(tickers))
+        return blank_index.copy() if len(calls) == 1 else full[list(tickers)]
+
+    monkeypatch.setattr(market, "_download", download)
+    monkeypatch.setattr(market, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(market, "_memory", {})
+    closes, source = market.get_history(["AAA.NS"])
+    assert source == "live" and calls[1] == [NIFTY]
+    assert closes[NIFTY].notna().all()
+
+    # The index stays blank even after the retry: do not serve or cache it.
+    monkeypatch.setattr(market, "_download", lambda tickers, **kwargs: blank_index[list(tickers)].copy())
+    monkeypatch.setattr(market, "_memory", {})
+    monkeypatch.setattr(market, "CACHE_DIR", tmp_path / "empty")
+    assert market.get_history(["AAA.NS"]) == (None, "unavailable")

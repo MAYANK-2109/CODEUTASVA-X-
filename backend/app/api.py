@@ -2,9 +2,11 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
 from app.ingestion.news import get_news
 from app.ingestion.prices import get_latest_prices
+from app.tools.market import to_ticker
 
 PORTFOLIO_FILE = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
 
@@ -59,3 +61,20 @@ def news(limit: int = 8) -> dict:
     names = [h["name"] for h in load_portfolio()["holdings"]]
     query = " OR ".join(f'"{name}"' for name in names) + " when:2d"
     return {"items": get_news(query, limit)}
+
+
+class PricesRequest(BaseModel):
+    symbols: list[str] = Field(max_length=200)
+
+
+@router.post("/prices")
+def prices(request: PricesRequest) -> dict:
+    """Latest market price per symbol. Symbols that cannot be priced are left out."""
+    tickers = {symbol: to_ticker(symbol) for symbol in request.symbols if symbol.strip()}
+    if not tickers:
+        return {"prices": {}, "as_of": None}
+    latest, as_of = get_latest_prices(sorted(set(tickers.values())))
+    return {
+        "prices": {symbol: latest[ticker] for symbol, ticker in tickers.items() if ticker in latest},
+        "as_of": as_of,
+    }

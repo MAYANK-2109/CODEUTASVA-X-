@@ -14,7 +14,9 @@ from app.tools import sentiment as sentiment_tool
 from app.tools import vector_store
 from app.tools.events import tokenize
 from app.tools.market import NIFTY, get_history, get_macro
-from app.tools.weather import GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, get_weather_outlook
+from app.tools.weather import (
+    GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, get_weather_outlook, holdings_at, sites_named_in,
+)
 
 HORIZON_SESSIONS = 5
 MAX_EVENTS = 6
@@ -230,16 +232,37 @@ def weather_macro(state: State) -> dict:
                 "Open-Meteo forecast API, IMD thresholds",
             )
         )
+    def named(site: dict) -> str:
+        present = holdings_at(site, state["holdings"])
+        if not present:
+            return "None of your holdings has a mapped operation there"
+        return "Your holdings with operations there: " + "; ".join(
+            f'{h["name"]} ({h["operation"]})' for h in present)
+
     for site in flagged:
         rows.append(
             evidence(
                 "W", len(rows) + 1,
                 f'{site["name"]} ({site["relevance"]}): {", ".join(site["flags"])} in the next 7 days, '
                 f'peak rain {site["max_rain_mm"]} mm/day, gusts {site["max_gust_kmh"]} km/h, '
-                f'max temperature {site["max_temp_c"]} C',
-                "Open-Meteo forecast API, IMD thresholds",
+                f'max temperature {site["max_temp_c"]} C. {named(site)}',
+                "Open-Meteo forecast API, IMD thresholds; site-to-company map",
             )
         )
+    # A question about a region is about the companies there, alert or not.
+    mentioned = [s for s in sites_named_in(state["query"], outlook or []) if s not in flagged]
+    for site in mentioned:
+        rows.append(
+            evidence(
+                "W", len(rows) + 1,
+                f'The question names the {site["name"]} area ({site["relevance"]}). {named(site)}',
+                "Site-to-company map",
+            )
+        )
+    exposed = [
+        {"site": site["name"], "holdings": holdings_at(site, state["holdings"])}
+        for site in [*flagged, *mentioned]
+    ]
 
     indicators, as_of = get_macro()
     if not indicators:
@@ -261,7 +284,7 @@ def weather_macro(state: State) -> dict:
         parts.append("macro: " + (", ".join(regime) if regime else "no stress flags"))
     return {
         "findings": {
-            "weather_macro": {"flagged_sites": flagged, "weather_ok": outlook is not None,
+            "weather_macro": {"flagged_sites": flagged, "exposed": exposed, "weather_ok": outlook is not None,
                               "indicators": indicators, "regime": regime}
         },
         "evidence": rows + macro_rows,
@@ -638,7 +661,7 @@ def _template(state: State, rows: list[dict]) -> str:
         lines.append(f"- {history[-1]['claim']} [{history[-1]['id']}]")
         lines.append(f"- Events used:{_ids(history[:-1], 'H')}")
     section("News sentiment", "S", 3)
-    weather_macro_rows = of("W")[:2] + of("M")
+    weather_macro_rows = of("W")[:3] + of("M")
     if weather_macro_rows:
         lines.append("## Weather and macro")
         lines.extend(f'- {r["claim"]} [{r["id"]}]' for r in weather_macro_rows)

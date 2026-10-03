@@ -26,6 +26,8 @@ type EditableHolding = Holding & { _rowKey: string }
 // ---------------------------------------------------------------------------
 const BACKEND_URL: string = (import.meta as any).env?.VITE_BACKEND_URL ?? 'http://localhost:8000'
 
+const PRICE_REFRESH_MS = 60_000
+
 const TYPE_COLOURS: Record<string, string> = {
   STOCK: 'bg-blue-100 text-blue-700',
   MF:    'bg-purple-100 text-purple-700',
@@ -491,6 +493,9 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
   const [filterType, setFilterType] = useState<string>('ALL')
   const [sortBy, setSortBy] = useState<'name' | 'pnl' | 'value'>('name')
   const [error, setError] = useState<string | null>(null)
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({})
+  const [pricesAsOf, setPricesAsOf] = useState<string | null>(null)
+  const [pricesFailed, setPricesFailed] = useState(false)
 
   const fetchHoldings = useCallback(async () => {
     if (!user?.id) return
@@ -518,6 +523,38 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
     }
   }, [externalShowModal, onExternalModalClose])
 
+  // Latest market prices for every holding that has a symbol, refreshed each minute.
+  const symbolKey = [...new Set(holdings.map(h => h.symbol?.trim()).filter(Boolean))].sort().join(',')
+  useEffect(() => {
+    if (!symbolKey) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const resp = await fetch(`${BACKEND_URL}/api/prices`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbols: symbolKey.split(',') }),
+        })
+        if (!resp.ok) throw new Error(`Request failed (${resp.status})`)
+        const data = await resp.json()
+        if (cancelled) return
+        setLivePrices(data.prices ?? {})
+        setPricesAsOf(data.as_of ?? null)
+        setPricesFailed(false)
+      } catch {
+        // Keep the last prices on screen; only flag the failure.
+        if (!cancelled) setPricesFailed(true)
+      }
+    }
+    load()
+    const timer = setInterval(load, PRICE_REFRESH_MS)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [symbolKey])
+
+  const isLive = (h: Holding) => livePrices[h.symbol?.trim()] != null
+  const priced = holdings.map(h => (isLive(h) ? { ...h, current_price: livePrices[h.symbol.trim()] } : h))
+  const liveCount = holdings.filter(isLive).length
+
   const handleAdd = (newHoldings: Holding[]) => {
     setHoldings(prev => [...newHoldings, ...prev])
     setShowModal(false)
@@ -529,7 +566,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
     if (!sbErr) setHoldings(prev => prev.filter(h => h.id !== id))
   }
 
-  const displayed = holdings
+  const displayed = priced
     .filter(h => filterType === 'ALL' || h.type === filterType)
     .sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name)
@@ -540,7 +577,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
     })
 
   const totalInvested = holdings.reduce((s, h) => s + (h.units ?? 0) * (h.buy_price ?? 0), 0)
-  const totalCurrent  = holdings.reduce((s, h) => s + (h.units ?? 0) * (h.current_price ?? h.buy_price ?? 0), 0)
+  const totalCurrent  = priced.reduce((s, h) => s + (h.units ?? 0) * (h.current_price ?? h.buy_price ?? 0), 0)
   const totalPnL      = totalCurrent - totalInvested
   const totalPnLPct   = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0
 
@@ -556,6 +593,12 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
           <h1 className="text-lg font-bold text-groww-text-primary">Portfolio</h1>
           <p className="text-xs text-groww-text-muted mt-0.5">
             {holdings.length} holding{holdings.length !== 1 ? 's' : ''} &middot; {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {pricesAsOf && (
+              <span id="portfolio-live-status">
+                {' '}&middot; {liveCount} live price{liveCount !== 1 ? 's' : ''}, updated {new Date(pricesAsOf).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            {pricesFailed && <span className="text-amber-600"> &middot; live prices unavailable, showing {pricesAsOf ? 'the last update' : 'saved prices'}</span>}
           </p>
         </div>
         <button
@@ -690,9 +733,18 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                         <td className="px-4 py-3.5 text-right text-sm text-gray-700 tabular-nums">{fmt(h.units, 3)}</td>
                         <td className="px-4 py-3.5 text-right text-sm text-gray-700 tabular-nums">{fmtCur(h.buy_price)}</td>
                         <td className="px-4 py-3.5 text-right">
-                          {h.current_price != null
-                            ? <span className="text-sm font-medium text-gray-800 tabular-nums">{fmtCur(h.current_price)}</span>
-                            : <span className="text-xs text-gray-400 italic">Pending</span>}
+                          {h.current_price != null ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-sm font-medium text-gray-800 tabular-nums">{fmtCur(h.current_price)}</span>
+                              {isLive(h) ? (
+                                <span className="flex items-center gap-1 text-[10px] font-medium text-groww-green">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-groww-green" />Live
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-400" title="No market price found for this holding; showing the price saved with it">Saved</span>
+                              )}
+                            </div>
+                          ) : <span className="text-xs text-gray-400 italic">Pending</span>}
                         </td>
                         <td className="px-4 py-3.5 text-right text-sm text-gray-600 tabular-nums">{fmtCur(invested)}</td>
                         <td className="px-4 py-3.5 text-right">

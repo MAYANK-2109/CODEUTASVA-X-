@@ -58,7 +58,14 @@ interface WeatherDay {
 }
 
 interface WeatherInsights {
-  sites: { name: string; relevance: string; sectors: string[]; flags: string[]; days: WeatherDay[] }[]
+  sites: {
+    name: string
+    relevance: string
+    sectors: string[]
+    companies: Record<string, string>
+    flags: string[]
+    days: WeatherDay[]
+  }[]
   thresholds: { rain_mm: number; gust_kmh: number; temp_c: number }
   source: string
 }
@@ -634,7 +641,7 @@ const InsightsPage: React.FC = () => {
                 <Card
                   id="insights-weather"
                   title="Weather outlook"
-                  subtitle="7-day forecast at sites that matter to listed companies, against alert thresholds"
+                  subtitle="7-day forecast at sites where listed companies operate, linked to your holdings"
                 >
                   {weather.status === 'loading' && <p className="text-sm text-groww-text-secondary">Loading forecast…</p>}
                   {weather.status === 'error' && <p className="text-sm text-red-600">{weather.message}</p>}
@@ -645,6 +652,10 @@ const InsightsPage: React.FC = () => {
                           const exposed = site.sectors.filter((s) => sectorWeights.has(s))
                           const share = exposed.reduce((sum, s) => sum + (sectorWeights.get(s)?.weight ?? 0), 0)
                           const alert = site.flags.length > 0
+                          // Holdings with a physical operation at this site, e.g. a refinery.
+                          const present = data.positions
+                            .filter((p) => site.companies[p.ticker.split('.')[0]])
+                            .map((p) => `${p.name} (${site.companies[p.ticker.split('.')[0]]})`)
                           return (
                             <li key={site.name} className="flex items-start gap-2" title={site.relevance}>
                               <span
@@ -659,9 +670,12 @@ const InsightsPage: React.FC = () => {
                                 <span className={alert ? 'font-semibold text-groww-text-primary' : 'text-groww-text-secondary'}>
                                   {alert ? site.flags.join(', ') : 'no alert'}
                                 </span>
-                                <span className="block text-groww-text-muted truncate">
+                                <span className={`block ${alert && present.length ? 'text-groww-text-primary' : 'text-groww-text-secondary'}`}>
+                                  {present.length ? `Your holdings here: ${present.join('; ')}` : 'None of your holdings operates here'}
+                                </span>
+                                <span className="block text-groww-text-muted">
                                   {exposed.length
-                                    ? `${pct(share, 0)} of your portfolio exposed (${exposed.join(', ')})`
+                                    ? `${pct(share, 0)} of your portfolio in exposed sectors (${exposed.join(', ')})`
                                     : 'None of your sectors exposed'}
                                 </span>
                               </span>

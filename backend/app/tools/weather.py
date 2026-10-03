@@ -5,20 +5,52 @@ import httpx
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 CACHE_TTL_SECONDS = 1800
 
-# Sites chosen for their economic footprint, not population.
+# Sites chosen for their economic footprint, not population. `companies` are
+# NSE symbols with a physical operation at or near the site; `regions` are the
+# words a question might use for the area.
 LOCATIONS = [
-    {"name": "Mumbai", "lat": 19.08, "lon": 72.88, "relevance": "financial hub, Mumbai High offshore oil, JNPT port",
-     "sectors": ["Energy", "Banking", "Financials", "Infrastructure"]},
-    {"name": "Jamnagar", "lat": 22.47, "lon": 70.06, "relevance": "refining hub, Gujarat ports",
-     "sectors": ["Energy", "Infrastructure"]},
-    {"name": "Chennai", "lat": 13.08, "lon": 80.27, "relevance": "auto and electronics manufacturing, IT",
-     "sectors": ["Auto", "IT"]},
-    {"name": "Visakhapatnam", "lat": 17.69, "lon": 83.22, "relevance": "refinery, steel plant, east-coast port",
-     "sectors": ["Energy", "Metals", "Infrastructure"]},
-    {"name": "Kolkata", "lat": 22.57, "lon": 88.36, "relevance": "east-coast port and trade hub",
-     "sectors": ["Metals", "Infrastructure"]},
-    {"name": "Delhi NCR", "lat": 28.61, "lon": 77.21, "relevance": "power demand centre, auto manufacturing",
-     "sectors": ["Utilities", "Auto", "Airlines"]},
+    {"name": "Mumbai", "lat": 19.08, "lon": 72.88,
+     "relevance": "financial hub, Mumbai High offshore oil, JNPT port",
+     "sectors": ["Energy", "Banking", "Financials", "Infrastructure"],
+     "regions": ["mumbai", "maharashtra", "konkan", "west coast", "arabian sea"],
+     "companies": {
+         "ONGC": "Mumbai High offshore oil fields", "BPCL": "Mumbai refinery", "HINDPETRO": "Mumbai refinery",
+         "RELIANCE": "headquarters", "HDFCBANK": "headquarters", "ICICIBANK": "headquarters",
+         "SBIN": "headquarters", "KOTAKBANK": "headquarters", "AXISBANK": "headquarters",
+         "TATAPOWER": "Mumbai power distribution", "INDIGO": "Mumbai airport hub",
+     }},
+    {"name": "Jamnagar", "lat": 22.47, "lon": 70.06,
+     "relevance": "refining hub, Gujarat ports",
+     "sectors": ["Energy", "Infrastructure"],
+     "regions": ["jamnagar", "gujarat", "kutch", "saurashtra", "west coast", "arabian sea"],
+     "companies": {"RELIANCE": "Jamnagar refinery complex", "ADANIPORTS": "Mundra port"}},
+    {"name": "Chennai", "lat": 13.08, "lon": 80.27,
+     "relevance": "auto and electronics manufacturing, IT",
+     "sectors": ["Auto", "IT"],
+     "regions": ["chennai", "tamil nadu", "east coast", "bay of bengal"],
+     "companies": {
+         "TCS": "Chennai delivery campuses", "INFY": "Chennai delivery campuses", "HCLTECH": "Chennai delivery campuses",
+         "ASHOKLEY": "headquarters and plants", "TVSMOTOR": "headquarters", "EICHERMOT": "Royal Enfield plants",
+         "IOC": "Chennai Petroleum refinery (subsidiary)",
+     }},
+    {"name": "Visakhapatnam", "lat": 17.69, "lon": 83.22,
+     "relevance": "refinery, steel plant, east-coast port",
+     "sectors": ["Energy", "Metals", "Infrastructure"],
+     "regions": ["visakhapatnam", "vizag", "andhra", "east coast", "bay of bengal"],
+     "companies": {"HINDPETRO": "Visakh refinery", "ADANIPORTS": "Gangavaram port", "NTPC": "Simhadri power station"}},
+    {"name": "Kolkata", "lat": 22.57, "lon": 88.36,
+     "relevance": "east-coast port and trade hub",
+     "sectors": ["Metals", "Infrastructure"],
+     "regions": ["kolkata", "west bengal", "bengal", "haldia", "east coast", "bay of bengal"],
+     "companies": {"ITC": "headquarters", "COALINDIA": "headquarters", "IOC": "Haldia refinery"}},
+    {"name": "Delhi NCR", "lat": 28.61, "lon": 77.21,
+     "relevance": "power demand centre, auto manufacturing",
+     "sectors": ["Utilities", "Auto", "Airlines"],
+     "regions": ["delhi", "ncr", "gurugram", "gurgaon", "haryana", "north india"],
+     "companies": {
+         "MARUTI": "Gurugram and Manesar plants", "HEROMOTOCO": "Gurugram plant", "INDIGO": "Delhi airport hub",
+         "NTPC": "headquarters and Dadri power station", "POWERGRID": "headquarters",
+     }},
 ]
 
 # India Meteorological Department thresholds.
@@ -78,6 +110,8 @@ def get_weather_outlook() -> list[dict] | None:
                 "name": place["name"],
                 "relevance": place["relevance"],
                 "sectors": place["sectors"],
+                "regions": place["regions"],
+                "companies": place["companies"],
                 "days": days,
                 "max_rain_mm": rain,
                 "max_gust_kmh": gust,
@@ -87,3 +121,19 @@ def get_weather_outlook() -> list[dict] | None:
         )
     _cache.update(at=time.time(), value=outlook)
     return outlook
+
+
+def holdings_at(site: dict, holdings: list[dict]) -> list[dict]:
+    """The holdings with an operation at this site, each with what it has there."""
+    companies = site.get("companies", {})
+    return [
+        {"name": h["name"], "ticker": h["ticker"], "operation": companies[h["ticker"].split(".")[0]]}
+        for h in holdings
+        if h["ticker"].split(".")[0] in companies
+    ]
+
+
+def sites_named_in(query: str, sites: list[dict]) -> list[dict]:
+    """Sites whose region the question mentions."""
+    text = query.lower()
+    return [site for site in sites if any(region in text for region in site.get("regions", []))]

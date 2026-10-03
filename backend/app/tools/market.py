@@ -118,9 +118,17 @@ def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
     cache_file = CACHE_DIR / f"history_{key}.csv"
     try:
         closes = _download(wanted, start=HISTORY_START)
-        if closes.empty or NIFTY not in closes.columns:
-            raise ValueError("empty price history")
-        closes = closes.ffill()
+        # On a poor connection a batch download can come back with some
+        # tickers blank. Ask once more for just those before accepting it.
+        blank = [t for t in wanted if t not in closes.columns or closes[t].notna().sum() == 0]
+        if blank and len(blank) < len(wanted):
+            retry = _download(blank, start=HISTORY_START)
+            for ticker in blank:
+                if ticker in retry.columns and retry[ticker].notna().sum() > 0:
+                    closes[ticker] = retry[ticker]
+        if closes.empty or NIFTY not in closes.columns or closes[NIFTY].notna().sum() == 0:
+            raise ValueError("price history is missing the index")
+        closes = closes.sort_index().ffill()
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         closes.to_csv(cache_file)
         _memory[key] = (time.time(), closes)
