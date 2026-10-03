@@ -12,7 +12,7 @@ app = FastAPI(title="Financial Intelligence Terminal API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(","),
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
