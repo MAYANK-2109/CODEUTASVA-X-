@@ -128,7 +128,6 @@ const LANE_GAP = 3
 const KIND_H = 4
 const SHORT_SITE: Record<string, string> = { Visakhapatnam: 'Vizag' }
 const shortSite = (name: string) => SHORT_SITE[name] ?? name
-const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 const inr = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value)
