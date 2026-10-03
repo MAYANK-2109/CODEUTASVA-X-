@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { isLeftover, savedPrice } from '../lib/holdings'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,35 @@ interface PortfolioStats {
   totalStocks: number
   isCustom: boolean
   lastUpdated: string
+  // Holdings with no market price; they are valued at cost in totalCurrent.
+  unpricedCount: number
+  // False until real figures have loaded; the page then shows a dash, never a stand-in number.
+  available: boolean
+  health: { label: string; detail: string } | null
+}
+
+interface MarketIndex {
+  key: string
+  label: string
+  value: number
+  change_1d_pct: number
+  change_1m_pct: number
+}
+
+interface MarketOverview {
+  indices: MarketIndex[]
+  trend: { label: string; detail: string } | null
+  as_of: string | null
+}
+
+// Concentration, from the effective number of holdings (1 / sum of squared weights).
+function portfolioHealth(positions: { name: string; value: number }[]) {
+  const total = positions.reduce((sum, p) => sum + p.value, 0)
+  if (!(total > 0)) return null
+  const effective = 1 / positions.reduce((sum, p) => sum + (p.value / total) ** 2, 0)
+  const largest = positions.reduce((a, b) => (b.value > a.value ? b : a))
+  const label = effective < 3 ? 'Concentrated' : effective < 6 ? 'Moderately diversified' : 'Diversified'
+  return { label, detail: `Largest holding is ${((largest.value / total) * 100).toFixed(0)}% (${largest.name})` }
 }
 
 // ── SVG Icon Components (Strictly NO emojis) ──────────────────────────────────
@@ -143,55 +173,13 @@ const IconSparkle = () => (
 
 // ── Fallback news dataset (guarantees instant display if backend is sleeping) ───
 
-const FALLBACK_NEWS: NewsItem[] = [
-  {
-    title: 'GSTAT: GSTR-9/9C Errors Cannot Deny Valid Input Tax Credit, Affirms Appellate Body',
-    source: 'Taxscan',
-    url: 'https://news.google.com',
-    published_at: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-    category: 'Tax & Policy',
-  },
-  {
-    title: 'NTPC Advances Clean Energy Drive With New Green Power & Skill Initiatives',
-    source: 'Economic Times',
-    url: 'https://news.google.com',
-    published_at: new Date(Date.now() - 65 * 60 * 1000).toISOString(),
-    category: 'Energy',
-  },
-  {
-    title: 'Reliance Retail Expands Omnichannel Footprint with Next-Gen Digital Hubs',
-    source: 'LiveMint',
-    url: 'https://news.google.com',
-    published_at: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
-    category: 'Retail',
-  },
-  {
-    title: 'RBI Monetary Policy: Focus Remains on Stable Liquidity and Inflation Containment',
-    source: 'Business Standard',
-    url: 'https://news.google.com',
-    published_at: new Date(Date.now() - 180 * 60 * 1000).toISOString(),
-    category: 'Economy',
-  },
-  {
-    title: 'Indian IT Giants See Rebound in Cloud & AI Transformation Deals for FY27',
-    source: 'Financial Express',
-    url: 'https://news.google.com',
-    published_at: new Date(Date.now() - 240 * 60 * 1000).toISOString(),
-    category: 'Tech',
-  },
-  {
-    title: 'Nifty 50 Holds Key Support Levels as Domestic Institutional Inflows Stay Resilient',
-    source: 'CNBC-TV18',
-    url: 'https://news.google.com',
-    published_at: new Date(Date.now() - 310 * 60 * 1000).toISOString(),
-    category: 'Markets',
-  },
-]
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const fmtCur = (n: number) =>
   `\u20B9${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const fmtNum = (n: number) =>
+  n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const fmtPct = (n: number) => {
   const prefix = n >= 0 ? '+' : ''
@@ -219,18 +207,23 @@ const DashboardPage: React.FC = () => {
 
   // State
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats>({
-    totalInvested: 397150,
-    totalCurrent: 416646,
-    totalProfitAmount: 19496,
-    totalProfitPercent: 4.91,
-    totalStocks: 8,
+    totalInvested: 0,
+    totalCurrent: 0,
+    totalProfitAmount: 0,
+    totalProfitPercent: 0,
+    totalStocks: 0,
     isCustom: false,
-    lastUpdated: 'Live',
+    lastUpdated: '',
+    unpricedCount: 0,
+    available: false,
+    health: null,
   })
+  const [market, setMarket] = useState<MarketOverview | null>(null)
+  const [marketFailed, setMarketFailed] = useState(false)
   const [portfolioLoading, setPortfolioLoading] = useState(true)
 
-  const [news, setNews] = useState<NewsItem[]>(FALLBACK_NEWS)
-  const [newsLoading, setNewsLoading] = useState(false)
+  const [news, setNews] = useState<NewsItem[]>([])
+  const [newsLoading, setNewsLoading] = useState(true)
   const [newsFilter, setNewsFilter] = useState('ALL')
   const [newsSearch, setNewsSearch] = useState('')
 
@@ -264,12 +257,14 @@ const DashboardPage: React.FC = () => {
 
       // 1. Try Supabase personal holdings for this user
       if (user?.id) {
-        const { data: holdings, error } = await supabase
+        const { data: saved, error } = await supabase
           .from('portfolio_holdings')
           .select('*')
           .eq('user_id', user.id)
+        // Header rows saved by an old import are not holdings.
+        const holdings = (saved ?? []).filter((h) => !isLeftover(h))
 
-        if (!error && holdings && holdings.length > 0) {
+        if (!error && holdings.length > 0) {
           foundUserHoldings = true
 
           // Latest market prices, matched by symbol, ISIN or name. A holding
@@ -293,6 +288,8 @@ const DashboardPage: React.FC = () => {
             // Saved prices are used below.
           }
           const liveCount = holdings.filter((h) => live[String(h.id)] != null).length
+          const priceOf = (h: (typeof holdings)[number]) => live[String(h.id)] ?? savedPrice(h)
+          const unpricedCount = holdings.filter((h) => priceOf(h) == null).length
 
           const invested = holdings.reduce(
             (acc, h) => acc + (Number(h.units) || 0) * (Number(h.buy_price) || 0),
@@ -301,8 +298,7 @@ const DashboardPage: React.FC = () => {
           const current = holdings.reduce(
             (acc, h) =>
               acc +
-              (Number(h.units) || 0) *
-              (live[String(h.id)] ?? (Number(h.current_price) || Number(h.buy_price) || 0)),
+              (Number(h.units) || 0) * (priceOf(h) ?? (Number(h.buy_price) || 0)),
             0
           )
           const profit = current - invested
@@ -316,6 +312,14 @@ const DashboardPage: React.FC = () => {
             totalStocks: holdings.length,
             isCustom: true,
             lastUpdated: liveCount > 0 ? `${liveCount} of ${holdings.length} live` : 'Saved prices',
+            unpricedCount,
+            available: true,
+            health: portfolioHealth(
+              holdings.map((h) => ({
+                name: h.name,
+                value: (Number(h.units) || 0) * (priceOf(h) ?? (Number(h.buy_price) || 0)),
+              }))
+            ),
           })
         }
       }
@@ -328,28 +332,38 @@ const DashboardPage: React.FC = () => {
           })
           if (res.ok) {
             const data = await res.json()
-            const invested = Number(data.totals?.invested_value) || 397150
-            const current = Number(data.totals?.current_value) || 416646
-            const profit = current - invested
-            const profitPct = invested > 0 ? (profit / invested) * 100 : 4.91
-            const count = Array.isArray(data.holdings) ? data.holdings.length : 8
-
-            setPortfolioStats({
-              totalInvested: invested,
-              totalCurrent: current,
-              totalProfitAmount: profit,
-              totalProfitPercent: profitPct,
-              totalStocks: count,
-              isCustom: false,
-              lastUpdated: 'Live Feed',
-            })
+            const sample: { name: string; invested_value: number; current_value: number | null }[] =
+              Array.isArray(data.holdings) ? data.holdings : []
+            if (sample.length > 0) {
+              // A sample holding without a live price is valued at cost and counted as unpriced.
+              const invested = sample.reduce((sum, h) => sum + (Number(h.invested_value) || 0), 0)
+              const current = sample.reduce(
+                (sum, h) => sum + (h.current_value ?? (Number(h.invested_value) || 0)),
+                0
+              )
+              const profit = current - invested
+              setPortfolioStats({
+                totalInvested: invested,
+                totalCurrent: current,
+                totalProfitAmount: profit,
+                totalProfitPercent: invested > 0 ? (profit / invested) * 100 : 0,
+                totalStocks: sample.length,
+                isCustom: false,
+                lastUpdated: 'Sample portfolio',
+                unpricedCount: sample.filter((h) => h.current_value == null).length,
+                available: true,
+                health: portfolioHealth(
+                  sample.map((h) => ({ name: h.name, value: h.current_value ?? (Number(h.invested_value) || 0) }))
+                ),
+              })
+            }
           }
         } catch {
-          // Keep resilient defaults
+          // Figures stay unavailable and the page shows a dash.
         }
       }
     } catch {
-      // Keep state resilient
+      // Figures stay unavailable and the page shows a dash.
     } finally {
       setPortfolioLoading(false)
     }
@@ -376,11 +390,29 @@ const DashboardPage: React.FC = () => {
         }
       }
     } catch {
-      // Use fallback news seamlessly
+      // The list keeps whatever was last fetched; with nothing fetched it says so.
     } finally {
       setNewsLoading(false)
     }
   }, [backendUrl])
+
+  // ── Fetch index levels and market trend ─────────────────────────────────────
+  const fetchMarketData = useCallback(async () => {
+    try {
+      const res = await fetch(`${backendUrl}/api/market/overview`)
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
+      setMarket(await res.json())
+      setMarketFailed(false)
+    } catch {
+      setMarketFailed(true)
+    }
+  }, [backendUrl])
+
+  const nifty = market?.indices.find((i) => i.key === 'nifty')
+  const sensex = market?.indices.find((i) => i.key === 'sensex')
+  const marketPending = marketFailed ? 'Unavailable' : 'Loading…'
+  // A dash stands in for any portfolio figure that has not loaded.
+  const shown = (text: string) => (portfolioStats.available ? text : '—')
 
   function determineCategory(text: string): string {
     const lower = text.toLowerCase()
@@ -394,6 +426,7 @@ const DashboardPage: React.FC = () => {
   useEffect(() => {
     fetchPortfolioData()
     fetchNewsData()
+    fetchMarketData()
   }, [fetchPortfolioData, fetchNewsData])
 
   // News Filtering
@@ -448,10 +481,18 @@ const DashboardPage: React.FC = () => {
             {/* Quick Live Index Ticker */}
             <div className="hidden md:flex items-center gap-3 px-3 py-1.5 rounded-xl bg-groww-bg-primary border border-groww-border-light text-xs font-medium">
               <span className="text-groww-text-secondary font-semibold">NIFTY 50</span>
-              <span className="text-groww-green font-bold flex items-center gap-1">
-                25,124.50
-                <span className="text-[10px] px-1 py-0.2 bg-emerald-100/70 rounded">+0.64%</span>
-              </span>
+              {nifty ? (
+                <span id="dashboard-nifty" className="text-groww-text-primary font-bold flex items-center gap-1.5">
+                  {fmtNum(nifty.value)}
+                  <span
+                    className={`text-[10px] px-1 rounded ${nifty.change_1d_pct >= 0 ? 'bg-emerald-100/70 text-groww-green' : 'bg-red-50 text-red-500'}`}
+                  >
+                    {fmtPct(nifty.change_1d_pct)}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-groww-text-muted">{marketPending}</span>
+              )}
             </div>
 
             {/* Refresh button */}
@@ -460,6 +501,7 @@ const DashboardPage: React.FC = () => {
               onClick={() => {
                 fetchPortfolioData()
                 fetchNewsData()
+                fetchMarketData()
               }}
               title="Refresh live data"
               className="w-9 h-9 rounded-xl border border-groww-border-light flex items-center justify-center text-groww-text-secondary hover:text-groww-green hover:border-groww-green hover:bg-groww-green-light/40 transition-all duration-200"
@@ -526,7 +568,9 @@ const DashboardPage: React.FC = () => {
                     </span>
                     <span className="text-xs text-groww-text-muted hidden sm:inline-flex items-center gap-1">
                       <IconClock />
-                      Live Market Session
+                      {market?.as_of
+                        ? `Index close of ${new Date(market.as_of).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                        : `Market data ${marketPending.toLowerCase()}`}
                     </span>
                   </div>
 
@@ -543,24 +587,45 @@ const DashboardPage: React.FC = () => {
                   <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-emerald-100/70">
                     <div className="p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
                       <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">Nifty 50</p>
-                      <p className="text-sm font-bold text-groww-text-primary mt-0.5">25,124.50</p>
-                      <span className="text-xs font-semibold text-groww-green flex items-center gap-0.5 mt-0.5">
-                        <IconTrendingUp /> +0.64%
-                      </span>
+                      <p className="text-sm font-bold text-groww-text-primary mt-0.5">{nifty ? fmtNum(nifty.value) : '—'}</p>
+                      {nifty ? (
+                        <span className={`text-xs font-semibold mt-0.5 block ${nifty.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
+                          {nifty.change_1d_pct >= 0 ? '▲' : '▼'} {fmtPct(nifty.change_1d_pct)} on the day
+                        </span>
+                      ) : (
+                        <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
+                      )}
                     </div>
 
                     <div className="p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
                       <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">BSE Sensex</p>
-                      <p className="text-sm font-bold text-groww-text-primary mt-0.5">82,340.10</p>
-                      <span className="text-xs font-semibold text-groww-green flex items-center gap-0.5 mt-0.5">
-                        <IconTrendingUp /> +0.58%
-                      </span>
+                      <p className="text-sm font-bold text-groww-text-primary mt-0.5">{sensex ? fmtNum(sensex.value) : '—'}</p>
+                      {sensex ? (
+                        <span className={`text-xs font-semibold mt-0.5 block ${sensex.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
+                          {sensex.change_1d_pct >= 0 ? '▲' : '▼'} {fmtPct(sensex.change_1d_pct)} on the day
+                        </span>
+                      ) : (
+                        <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
+                      )}
                     </div>
 
                     <div className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
                       <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">Market Trend</p>
-                      <p className="text-sm font-bold text-groww-green-dark mt-0.5">Bullish Momentum</p>
-                      <span className="text-xs text-groww-text-secondary mt-0.5 block truncate">Broad market gains</span>
+                      <p
+                        id="dashboard-market-trend"
+                        className={`text-sm font-bold mt-0.5 ${
+                          market?.trend?.label === 'Uptrend'
+                            ? 'text-groww-green-dark'
+                            : market?.trend?.label === 'Downtrend'
+                              ? 'text-red-600'
+                              : 'text-groww-text-primary'
+                        }`}
+                      >
+                        {market?.trend?.label ?? '—'}
+                      </p>
+                      <span className="text-xs text-groww-text-secondary mt-0.5 block truncate">
+                        {market?.trend?.detail ?? marketPending}
+                      </span>
                     </div>
                   </div>
 
@@ -660,8 +725,14 @@ const DashboardPage: React.FC = () => {
                     </div>
                   ) : filteredNews.length === 0 ? (
                     <div className="py-12 text-center">
-                      <p className="text-sm font-semibold text-groww-text-secondary">No articles found</p>
-                      <p className="text-xs text-groww-text-muted mt-1">Try searching for a different keyword or category.</p>
+                      <p className="text-sm font-semibold text-groww-text-secondary">
+                        {news.length === 0 ? 'News is unavailable right now' : 'No articles found'}
+                      </p>
+                      <p className="text-xs text-groww-text-muted mt-1">
+                        {news.length === 0
+                          ? 'The news feed could not be reached. Use refresh to try again.'
+                          : 'Try searching for a different keyword or category.'}
+                      </p>
                     </div>
                   ) : (
                     filteredNews.map((item, index) => (
@@ -794,7 +865,7 @@ const DashboardPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-base sm:text-lg font-extrabold text-groww-text-primary tracking-tight">
-                        {fmtCur(portfolioStats.totalInvested)}
+                        {shown(fmtCur(portfolioStats.totalInvested))}
                       </p>
                       <p className="text-[11px] text-groww-text-muted mt-1">
                         Principal capital
@@ -817,7 +888,7 @@ const DashboardPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-base sm:text-lg font-extrabold text-groww-text-primary tracking-tight">
-                        {portfolioStats.totalStocks} {portfolioStats.totalStocks === 1 ? 'Asset' : 'Assets'}
+                        {shown(`${portfolioStats.totalStocks} ${portfolioStats.totalStocks === 1 ? 'Asset' : 'Assets'}`)}
                       </p>
                       <p className="text-[11px] text-groww-text-muted mt-1">
                         Active holdings
@@ -841,7 +912,7 @@ const DashboardPage: React.FC = () => {
                     <div>
                       <p className={`text-base sm:text-lg font-extrabold tracking-tight ${portfolioStats.totalProfitPercent >= 0 ? 'text-groww-green' : 'text-red-500'
                         }`}>
-                        {fmtPct(portfolioStats.totalProfitPercent)}
+                        {shown(fmtPct(portfolioStats.totalProfitPercent))}
                       </p>
                       <p className="text-[11px] text-groww-text-muted mt-1">
                         Total return rate (ROI)
@@ -865,8 +936,7 @@ const DashboardPage: React.FC = () => {
                     <div>
                       <p className={`text-base sm:text-lg font-extrabold tracking-tight ${portfolioStats.totalProfitAmount >= 0 ? 'text-groww-green' : 'text-red-500'
                         }`}>
-                        {portfolioStats.totalProfitAmount >= 0 ? '+' : ''}
-                        {fmtCur(portfolioStats.totalProfitAmount)}
+                        {shown(`${portfolioStats.totalProfitAmount >= 0 ? '+' : ''}${fmtCur(portfolioStats.totalProfitAmount)}`)}
                       </p>
                       <p className="text-[11px] text-groww-text-muted mt-1">
                         Unrealized profit
@@ -889,7 +959,7 @@ const DashboardPage: React.FC = () => {
                     </div>
                     <div>
                       <p className="text-base sm:text-lg font-extrabold text-groww-text-primary tracking-tight">
-                        {fmtCur(portfolioStats.totalCurrent)}
+                        {shown(fmtCur(portfolioStats.totalCurrent))}
                       </p>
                       <p className="text-[11px] text-groww-text-muted mt-1">
                         Live market valuation
@@ -911,22 +981,34 @@ const DashboardPage: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <p className="text-base sm:text-lg font-extrabold text-teal-700 tracking-tight">
-                        Balanced
+                      <p
+                        id="dashboard-portfolio-health"
+                        className={`text-base sm:text-lg font-extrabold tracking-tight ${
+                          portfolioStats.health?.label === 'Concentrated' ? 'text-amber-600' : 'text-teal-700'
+                        }`}
+                      >
+                        {portfolioStats.health?.label ?? '—'}
                       </p>
                       <p className="text-[11px] text-groww-text-muted mt-1">
-                        Diversified risk score
+                        {portfolioStats.health?.detail ?? 'Needs priced holdings'}
                       </p>
                     </div>
                   </div>
                 </div>
+
+                {portfolioStats.unpricedCount > 0 && (
+                  <p id="dashboard-unpriced-note" className="mt-3 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-[11px] text-groww-text-secondary">
+                    {portfolioStats.unpricedCount} holding{portfolioStats.unpricedCount !== 1 ? 's have' : ' has'} no market
+                    price and {portfolioStats.unpricedCount !== 1 ? 'are' : 'is'} counted at cost in the current value.
+                  </p>
+                )}
 
                 {/* ── Asset Allocation / Performance Bar ──────────────────── */}
                 <div className="mt-4 p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100">
                   <div className="flex items-center justify-between text-xs font-semibold text-groww-text-secondary mb-2">
                     <span>Capital Distribution</span>
                     <span className="text-groww-green font-bold">
-                      {((portfolioStats.totalProfitAmount / (portfolioStats.totalCurrent || 1)) * 100).toFixed(1)}% Gains Share
+                      {shown(`${((portfolioStats.totalProfitAmount / (portfolioStats.totalCurrent || 1)) * 100).toFixed(1)}% Gains Share`)}
                     </span>
                   </div>
 
@@ -949,10 +1031,10 @@ const DashboardPage: React.FC = () => {
                   <div className="flex items-center justify-between text-[11px] text-groww-text-muted mt-2">
                     <span className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-groww-green inline-block" />
-                      Invested ({fmtCur(portfolioStats.totalInvested)})
+                      Invested ({shown(fmtCur(portfolioStats.totalInvested))})
                     </span>
                     <span className="flex items-center gap-1.5 font-medium text-groww-text-primary">
-                      Gain ({fmtCur(portfolioStats.totalProfitAmount)})
+                      Gain ({shown(fmtCur(portfolioStats.totalProfitAmount))})
                     </span>
                   </div>
                 </div>

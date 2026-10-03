@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { isLeftover, savedPrice } from '../lib/holdings'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,21 +43,21 @@ const TYPE_COLOURS: Record<string, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 const fmt = (n: number | null | undefined, decimals = 2) =>
-  n == null ? '0.00' : n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  n == null ? '—' : n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 
 const fmtCur = (n: number | null | undefined) =>
-  n == null ? '₹0.00' : `\u20B9${fmt(n)}`
+  n == null ? '—' : `\u20B9${fmt(n)}`
 
+// Profit and loss need a real current price. Without one they are unknown,
+// not zero.
 function calcPnL(h: Holding) {
-  if (h.units == null || h.buy_price == null) return null
-  const cp = h.current_price ?? h.buy_price
-  return (cp - h.buy_price) * h.units
+  if (h.units == null || h.buy_price == null || h.current_price == null) return null
+  return (h.current_price - h.buy_price) * h.units
 }
 
 function pnlPct(h: Holding) {
-  if (h.buy_price == null || h.buy_price === 0) return null
-  const cp = h.current_price ?? h.buy_price
-  return ((cp - h.buy_price) / h.buy_price) * 100
+  if (h.buy_price == null || h.buy_price === 0 || h.current_price == null) return null
+  return ((h.current_price - h.buy_price) / h.buy_price) * 100
 }
 
 function avatarColor(s: string): string {
@@ -191,6 +192,15 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
   const handleAdd = async () => {
     const valid = rows.filter(r => r.name.trim())
     if (valid.length === 0) { setError('Add at least one holding with a name.'); return }
+    // A holding cannot be valued without a quantity and a buy price, and
+    // guessing either would put invented numbers in the portfolio.
+    const incomplete = valid.filter(r => !(Number(r.units) > 0) || r.buy_price == null || Number(r.buy_price) < 0)
+    if (incomplete.length > 0) {
+      const names = incomplete.slice(0, 3).map(r => r.name.trim()).join(', ')
+      const more = incomplete.length > 3 ? ` and ${incomplete.length - 3} more` : ''
+      setError(`Enter the units and buy price for: ${names}${more}. Or remove ${incomplete.length === 1 ? 'that row' : 'those rows'}.`)
+      return
+    }
     setStep('saving'); setError(null)
     const insertRows = valid.map(h => ({
       user_id: userId,
@@ -199,9 +209,9 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
       isin: h.isin || '',
       type: h.type || 'STOCK',
       buy_date: h.buy_date || null,
-      units: h.units != null ? h.units : 1,
-      buy_price: h.buy_price != null ? h.buy_price : 0,
-      current_price: h.current_price != null ? h.current_price : (h.buy_price != null ? h.buy_price : 0),
+      units: h.units,
+      buy_price: h.buy_price,
+      current_price: h.current_price != null && h.current_price > 0 ? h.current_price : null,
     }))
     try {
       const { data, error: sbErr } = await supabase.from('portfolio_holdings').insert(insertRows).select()
@@ -569,7 +579,19 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
   }, [refsJson])
 
   const isLive = (h: Holding) => livePrices[priceKey(h)] != null
-  const priced = holdings.map(h => (isLive(h) ? { ...h, current_price: livePrices[priceKey(h)] } : h))
+  const priced = holdings.map(h => ({
+    ...h,
+    current_price: isLive(h) ? livePrices[priceKey(h)] : savedPrice(h),
+  }))
+  const unpricedCount = priced.filter(h => h.current_price == null && !isLeftover(h)).length
+  const leftovers = holdings.filter(h => h.id && isLeftover(h))
+
+  const removeLeftovers = async () => {
+    const ids = leftovers.map(h => h.id!)
+    const { error: sbErr } = await supabase.from('portfolio_holdings').delete().in('id', ids)
+    if (sbErr) { setError(sbErr.message); return }
+    setHoldings(prev => prev.filter(h => !ids.includes(h.id ?? '')))
+  }
   const liveCount = holdings.filter(isLive).length
 
   const handleAdd = (newHoldings: Holding[]) => {
@@ -636,6 +658,28 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
 
       <div className="flex-1 p-4 sm:p-6">
         {error && <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">{error}</div>}
+
+        {leftovers.length > 0 && (
+          <div id="portfolio-leftovers" className="mb-4 px-4 py-3 rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-sm flex flex-wrap items-center gap-3">
+            <p className="flex-1 min-w-[220px]">
+              {leftovers.length} row{leftovers.length !== 1 ? 's' : ''} came from a statement's header, not from holdings:{' '}
+              <span className="font-medium">{leftovers.map(h => h.name).join(', ')}</span>.
+            </p>
+            <button
+              onClick={removeLeftovers}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 transition-colors"
+            >
+              Remove {leftovers.length === 1 ? 'it' : `all ${leftovers.length}`}
+            </button>
+          </div>
+        )}
+
+        {unpricedCount > 0 && (
+          <p id="portfolio-unpriced" className="mb-4 px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-gray-600 text-xs">
+            {unpricedCount} holding{unpricedCount !== 1 ? 's have' : ' has'} no market price. {unpricedCount !== 1 ? 'They are' : 'It is'} counted
+            at cost in Current Value, and {unpricedCount !== 1 ? 'their' : 'its'} profit or loss is not shown.
+          </p>
+        )}
 
         {/* Summary Cards */}
         {holdings.length > 0 && (
@@ -738,7 +782,11 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                             <StockLogo name={h.name} symbol={h.symbol} />
                             <div>
                               <p className="text-sm font-semibold text-gray-800 leading-tight">{h.name}</p>
-                              {(h.symbol || h.isin) && <p className="text-xs text-gray-400">{h.symbol || h.isin}</p>}
+                              {(() => {
+                                // The trading symbol, or the ticker the price was matched to. Never the ISIN.
+                                const ticker = h.symbol?.trim() || (liveTickers[priceKey(h)] ?? '').replace(/\.(NS|BO)$/, '')
+                                return ticker ? <p className="text-xs text-gray-400">{ticker}</p> : null
+                              })()}
                             </div>
                           </div>
                         </td>
@@ -765,7 +813,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                                 <span className="text-[10px] text-gray-400" title="No market price found for this holding; showing the price saved with it">Saved</span>
                               )}
                             </div>
-                          ) : <span className="text-xs text-gray-400 italic">Pending</span>}
+                          ) : <span className="text-xs text-gray-400 italic" title="No market price was found for this holding">No price</span>}
                         </td>
                         <td className="px-4 py-3.5 text-right text-sm text-gray-600 tabular-nums">{fmtCur(invested)}</td>
                         <td className="px-4 py-3.5 text-right">

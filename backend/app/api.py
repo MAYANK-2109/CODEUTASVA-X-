@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.ingestion.news import get_news
 from app.ingestion.prices import get_latest_prices
 from app.tools import resolver
+from app.tools.market import get_indices, market_trend
 
 PORTFOLIO_FILE = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
 
@@ -110,3 +111,12 @@ def prices(request: PricesRequest) -> dict:
         if ticker:
             result[key], tickers[key] = latest[ticker], ticker
     return {"prices": result, "tickers": tickers, "as_of": as_of}
+
+
+@router.get("/market/overview")
+def market_overview() -> dict:
+    """Index levels and the market trend shown on the dashboard."""
+    indices, as_of = get_indices()
+    if not indices:
+        raise HTTPException(status_code=503, detail="Index data is unavailable right now.")
+    return {"indices": indices, "trend": market_trend(indices), "as_of": as_of}

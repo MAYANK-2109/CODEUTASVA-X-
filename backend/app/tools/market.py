@@ -191,3 +191,57 @@ def get_macro() -> tuple[list[dict], str | None]:
     if indicators:
         _memory["macro"] = (time.time(), result)
     return result
+
+
+INDEX_SERIES = {NIFTY: ("nifty", "Nifty 50"), "^BSESN": ("sensex", "BSE Sensex")}
+INDEX_TTL_SECONDS = 300
+TREND_THRESHOLD_PCT = 2.0
+
+
+def get_indices() -> tuple[list[dict], str | None]:
+    """Latest close, change on the day and change over one month for the
+    headline indices, with the date of that close. Empty when unavailable."""
+    hit = _memory.get("indices")
+    if hit and time.time() - hit[0] < INDEX_TTL_SECONDS:
+        return hit[1]
+    try:
+        closes = _download(list(INDEX_SERIES), period="3mo")
+    except Exception:
+        return [], None
+
+    indices, last_date = [], None
+    for ticker, (key, label) in INDEX_SERIES.items():
+        if ticker not in closes.columns:
+            continue
+        series = closes[ticker].dropna()
+        if len(series) < 22:
+            continue
+        indices.append(
+            {
+                "key": key,
+                "label": label,
+                "value": round(float(series.iloc[-1]), 2),
+                "change_1d_pct": round(float(series.iloc[-1] / series.iloc[-2] - 1) * 100, 2),
+                "change_1m_pct": round(float(series.iloc[-1] / series.iloc[-22] - 1) * 100, 2),
+            }
+        )
+        last_date = series.index[-1].date().isoformat()
+    result = (indices, last_date)
+    if indices:
+        _memory["indices"] = (time.time(), result)
+    return result
+
+
+def market_trend(indices: list[dict]) -> dict | None:
+    """A plain label for the Nifty's one-month move. None without Nifty data."""
+    nifty = next((i for i in indices if i["key"] == "nifty"), None)
+    if nifty is None:
+        return None
+    change = nifty["change_1m_pct"]
+    if change >= TREND_THRESHOLD_PCT:
+        label = "Uptrend"
+    elif change <= -TREND_THRESHOLD_PCT:
+        label = "Downtrend"
+    else:
+        label = "Sideways"
+    return {"label": label, "detail": f"Nifty 50 {change:+.1f}% over one month"}

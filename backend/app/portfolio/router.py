@@ -128,7 +128,8 @@ def _enrich(holdings: list[dict]) -> None:
     Statements usually identify a holding by ISIN or by name only. The symbol
     is looked up from those, so the review table shows a ticker and the ISIN
     is kept only as a hidden match key. The latest price replaces the
-    statement's closing price when one is available.
+    statement's closing price when one is available; otherwise the closing
+    price stands, and a holding with neither is left without a price.
     """
     from app.ingestion.prices import get_latest_prices
     from app.tools import resolver
@@ -154,9 +155,8 @@ def _enrich(holdings: list[dict]) -> None:
             h["symbol"] = ticker.rsplit(".", 1)[0]
         if ticker in prices:
             h["current_price"] = prices[ticker]
-        # Last resort so the review table has a number to edit: the buy price.
-        if h.get("current_price") is None and h.get("buy_price") is not None:
-            h["current_price"] = h["buy_price"]
+        # With no live quote and no closing price in the file, the price stays
+        # unknown. Substituting the buy price would report a false zero P&L.
 
 
 @router.post("/upload-pdf")

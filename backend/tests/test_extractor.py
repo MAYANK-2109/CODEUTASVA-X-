@@ -141,7 +141,8 @@ def test_upload_fills_symbol_from_isin_and_prefers_the_live_price(monkeypatch):
     assert (holdings[0]["symbol"], holdings[0]["current_price"]) == ("RELIANCE", 1180.0)
     # No live quote: the symbol is still filled and the statement's closing price is kept.
     assert (holdings[1]["symbol"], holdings[1]["current_price"]) == ("GOLDBEES", 121.43)
-    assert (holdings[2]["symbol"], holdings[2]["current_price"]) == ("", 10.0)
+    # Neither a live quote nor a closing price: unknown, never the buy price.
+    assert (holdings[2]["symbol"], holdings[2]["current_price"]) == ("", None)
 
 
 def test_wrapped_pdf_header_cells_and_names_are_normalised():
@@ -156,8 +157,15 @@ def test_wrapped_pdf_header_cells_and_names_are_normalised():
     assert (row["units"], row["buy_price"], row["current_price"]) == (81.0, 22.17, 22.12)
 
 
-def test_known_isins_resolve_without_a_search():
+def test_isins_and_exact_names_resolve_from_the_exchange_list(monkeypatch):
     from app.tools import resolver
 
-    assert resolver.KNOWN_ISINS["INF204KB17I5"] == "GOLDBEES.NS"
+    def no_network(*args, **kwargs):
+        raise AssertionError("the exchange list should answer this without a search")
+
+    monkeypatch.setattr(resolver.yf, "Search", no_network)
+    assert resolver.candidates("", "INF204KB17I5", "NIP IND ETF GOLD BEES") == ["GOLDBEES.NS"]
     assert resolver.candidates("", "INF200KA16D8", "SBI-ETF GOLD") == ["SETFGOLD.NS"]
+    assert resolver.candidates("", "INE002A01018", "") == ["RELIANCE.NS"]
+    assert resolver.candidates("", "", "State Bank of India") == ["SBIN.NS"]
+    assert resolver.candidates("", "", "RELIANCE INDUSTRIES LTD") == ["RELIANCE.NS"]
