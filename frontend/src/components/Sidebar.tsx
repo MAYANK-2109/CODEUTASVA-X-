@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -6,12 +7,14 @@ interface NavItem {
   id: string
   label: string
   icon: React.ReactNode
+  path?: string
 }
 
 const navItems: NavItem[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
+    path: '/dashboard',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="7" height="7"/>
@@ -34,6 +37,7 @@ const navItems: NavItem[] = [
   {
     id: 'portfolio',
     label: 'Portfolio',
+    path: '/portfolio',
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="18" y1="20" x2="18" y2="10"/>
@@ -70,7 +74,16 @@ const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
-  const [activeItem, setActiveItem] = useState('dashboard')
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const [activeItem, setActiveItem] = useState(
+    navItems.find((item) => item.path === pathname)?.id ?? 'dashboard'
+  )
+
+  const selectItem = (item: NavItem) => {
+    setActiveItem(item.id)
+    if (item.path) navigate(item.path)
+  }
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? 'U'
   const userEmail = user?.email ?? 'user@example.com'
@@ -121,7 +134,7 @@ const Sidebar: React.FC = () => {
             <div key={item.id} className="relative group">
               <button
                 id={`sidebar-nav-${item.id}`}
-                onClick={() => setActiveItem(item.id)}
+                onClick={() => selectItem(item)}
                 className={`nav-item-collapsed w-full ${activeItem === item.id ? 'active' : ''}`}
                 aria-label={item.label}
               >
@@ -144,7 +157,7 @@ const Sidebar: React.FC = () => {
             <button
               key={item.id}
               id={`sidebar-nav-${item.id}`}
-              onClick={() => setActiveItem(item.id)}
+              onClick={() => selectItem(item)}
               className={`nav-item w-full text-left ${activeItem === item.id ? 'active' : ''}`}
             >
               <span className="shrink-0">{item.icon}</span>
