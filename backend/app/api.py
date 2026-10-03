@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.ingestion.news import get_news
 from app.ingestion.prices import get_latest_prices
-from app.tools import resolver
+from app.tools import resolver, vector_store
 from app.tools.market import get_indices, market_trend
 
 PORTFOLIO_FILE = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
@@ -61,7 +61,9 @@ def portfolio() -> dict:
 def news(limit: int = 8) -> dict:
     names = [h["name"] for h in load_portfolio()["holdings"]]
     query = " OR ".join(f'"{name}"' for name in names) + " when:2d"
-    return {"items": get_news(query, limit)}
+    items = get_news(query, limit)
+    vector_store.index_news(items)  # embedded and indexed in the background
+    return {"items": items}
 
 
 class HoldingRef(BaseModel):

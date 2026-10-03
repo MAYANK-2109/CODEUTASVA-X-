@@ -1,9 +1,26 @@
+"""Weather at the sites where listed companies operate: the 7-day forecast, and
+the days since 2013 that crossed an alert threshold.
+
+Rebuild the history file with:  uv run python -m app.tools.weather --history
+"""
+
+import json
+import sys
 import time
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 
+from app.tools import health
+
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 CACHE_TTL_SECONDS = 1800
+HISTORY_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "weather_extremes.json"
+HISTORY_START = "2013-01-01"
+HISTORY_TOP_UP_SECONDS = 6 * 3600
+HISTORY_SOURCE = "Open-Meteo historical weather (ERA5 reanalysis); India Meteorological Department thresholds"
 
 # Sites chosen for their economic footprint, not population. `companies` are
 # NSE symbols with a physical operation at or near the site; `regions` are the
@@ -58,7 +75,15 @@ HEAVY_RAIN_MM = 64.5
 GALE_GUST_KMH = 62
 HEAT_C = 40
 
+# The measure behind each kind of alert day.
+KINDS = {
+    "rain": ("precipitation_sum", HEAVY_RAIN_MM),
+    "wind": ("wind_gusts_10m_max", GALE_GUST_KMH),
+    "heat": ("temperature_2m_max", HEAT_C),
+}
+
 _cache: dict[str, object] = {"at": 0.0, "value": None}
+_history: dict[str, object] = {"at": 0.0, "value": None}
 
 
 def get_weather_outlook() -> list[dict] | None:
@@ -68,6 +93,7 @@ def get_weather_outlook() -> list[dict] | None:
     """
     if _cache["value"] and time.time() - _cache["at"] < CACHE_TTL_SECONDS:
         return _cache["value"]
+    started = time.perf_counter()
     try:
         response = httpx.get(
             FORECAST_URL,
@@ -82,8 +108,11 @@ def get_weather_outlook() -> list[dict] | None:
         )
         response.raise_for_status()
         payload = response.json()
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ValueError) as exc:
+        health.record("weather", False, detail=type(exc).__name__)
         return None
+    health.record("weather", True, ms=(time.perf_counter() - started) * 1000, items=len(LOCATIONS),
+                  detail=f"7-day forecast for {len(LOCATIONS)} sites")
 
     outlook = []
     for place, forecast in zip(LOCATIONS, payload if isinstance(payload, list) else [payload]):
@@ -139,3 +168,87 @@ def sites_named_in(query: str, sites: list[dict]) -> list[dict]:
     """Sites whose region the question mentions."""
     text = query.lower()
     return [site for site in sites if any(region in text for region in site.get("regions", []))]
+
+
+# --------------------------------------------------------------------------- history
+
+
+def _threshold_days(daily: dict) -> list[list]:
+    """[date, kind, value] for every day at or above a threshold."""
+    days = []
+    for kind, (field, threshold) in KINDS.items():
+        for day, value in zip(daily.get("time", []), daily.get(field, [])):
+            if value is not None and value >= threshold:
+                days.append([day, kind, round(float(value), 1)])
+    return sorted(days)
+
+
+def _archive(places: list[dict], start: str, end: str) -> dict[str, list[list]]:
+    """Threshold days per site between two dates, from the reanalysis archive."""
+    response = httpx.get(
+        ARCHIVE_URL,
+        params={
+            "latitude": ",".join(str(p["lat"]) for p in places),
+            "longitude": ",".join(str(p["lon"]) for p in places),
+            "start_date": start, "end_date": end,
+            "daily": ",".join(field for field, _ in KINDS.values()),
+            "timezone": "Asia/Kolkata",
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return {place["name"]: _threshold_days(result.get("daily", {}))
+            for place, result in zip(places, payload if isinstance(payload, list) else [payload])}
+
+
+def build_history() -> dict:
+    """Fetch every site since HISTORY_START, one request each, and save the alert days."""
+    through = (date.today() - timedelta(days=1)).isoformat()
+    sites = {}
+    for place in LOCATIONS:
+        sites.update(_archive([place], HISTORY_START, through))
+        print(f'{place["name"]}: {len(sites[place["name"]])} alert days')
+        time.sleep(2)
+    history = {
+        "built_at": datetime.now(timezone.utc).isoformat(), "start": HISTORY_START, "through": through,
+        "source": HISTORY_SOURCE,
+        "thresholds": {"rain_mm": HEAVY_RAIN_MM, "gust_kmh": GALE_GUST_KMH, "temp_c": HEAT_C},
+        "sites": sites,
+    }
+    HISTORY_FILE.write_text(json.dumps(history, separators=(",", ":")))
+    return history
+
+
+def get_weather_history() -> dict | None:
+    """Alert days per site since 2013: {through, source, sites: {name: [[date, kind, value]]}}.
+
+    The saved file is extended in memory with the days since it was built. If
+    that request fails the file is used as it is, and `through` says how far it goes.
+    """
+    if _history["value"] and time.time() - _history["at"] < HISTORY_TOP_UP_SECONDS:
+        return _history["value"]
+    try:
+        history = json.loads(HISTORY_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    if history["through"] < yesterday:
+        try:
+            start = (date.fromisoformat(history["through"]) + timedelta(days=1)).isoformat()
+            for name, days in _archive(LOCATIONS, start, yesterday).items():
+                history["sites"].setdefault(name, []).extend(days)
+            history["through"] = yesterday
+        except (httpx.HTTPError, ValueError, KeyError):
+            pass
+    _history.update(at=time.time(), value=history)
+    return history
+
+
+if __name__ == "__main__":
+    if "--history" in sys.argv:
+        built = build_history()
+        print(f'Saved {HISTORY_FILE.name}: {sum(len(d) for d in built["sites"].values())} alert days to {built["through"]}')
+    else:
+        for site in get_weather_outlook() or []:
+            print(site["name"], site["flags"] or "no alert")

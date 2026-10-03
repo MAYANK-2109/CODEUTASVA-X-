@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-from app.tools import resolver
+from app.tools import health, resolver
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 CACHE_DIR = DATA_DIR / "cache"
@@ -18,6 +18,16 @@ HISTORY_START = "2013-01-01"
 # Short enough that an alert on today's move is not hours stale.
 HISTORY_TTL_SECONDS = 15 * 60
 MACRO_TTL_SECONDS = 600
+
+# Assets outside the equity book that an event can move. Each trades on its
+# own calendar, so their history is kept apart from the NSE price history.
+CROSS_ASSETS = {
+    "BZ=F": "Brent crude",
+    "NG=F": "Natural gas (Henry Hub)",
+    "GC=F": "Gold",
+    "INR=X": "USD/INR",
+}
+CROSS_ASSET_TTL_SECONDS = 3600
 
 MACRO_SERIES = {
     "BZ=F": "Brent crude (USD/bbl)",
@@ -139,6 +149,7 @@ def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
         return hit[1], "live"
 
     cache_file = CACHE_DIR / f"history_{key}.csv"
+    started = time.perf_counter()
     try:
         closes = _download(wanted, start=HISTORY_START)
         # On a poor connection a batch download can come back with some
@@ -155,12 +166,38 @@ def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         closes.to_csv(cache_file)
         _memory[key] = (time.time(), closes)
+        health.record("history", True, ms=(time.perf_counter() - started) * 1000, items=len(wanted),
+                      detail=f"closes to {closes.index[-1].date()}")
         return closes, "live"
-    except Exception:
+    except Exception as exc:
         if cache_file.exists():
             closes = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+            health.record("history", False, detail=f"live fetch failed, saved copy to {closes.index[-1].date()} in use")
             return closes, "cache"
+        health.record("history", False, detail=f"{type(exc).__name__}: no price history")
         return None, "unavailable"
+
+
+def get_cross_assets() -> pd.DataFrame | None:
+    """Daily closes since 2013 for crude, gas, gold and the rupee. Gaps are left
+    as they are, so each column can be read on its own trading calendar.
+    None when neither the live source nor a saved copy is available."""
+    hit = _memory.get("cross_assets")
+    if hit and time.time() - hit[0] < CROSS_ASSET_TTL_SECONDS:
+        return hit[1]
+    cache_file = CACHE_DIR / "cross_assets.csv"
+    try:
+        closes = _download(list(CROSS_ASSETS), start=HISTORY_START).sort_index()
+        if closes.empty:
+            raise ValueError("no cross-asset history")
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        closes.to_csv(cache_file)
+        _memory["cross_assets"] = (time.time(), closes)
+        return closes
+    except Exception:
+        if cache_file.exists():
+            return pd.read_csv(cache_file, index_col=0, parse_dates=True)
+        return None
 
 
 def get_macro() -> tuple[list[dict], str | None]:
@@ -168,9 +205,11 @@ def get_macro() -> tuple[list[dict], str | None]:
     hit = _memory.get("macro")
     if hit and time.time() - hit[0] < MACRO_TTL_SECONDS:
         return hit[1]
+    started = time.perf_counter()
     try:
         closes = _download(list(MACRO_SERIES), period="3mo").ffill()
-    except Exception:
+    except Exception as exc:
+        health.record("macro", False, detail=type(exc).__name__)
         return [], None
 
     indicators = []
@@ -189,6 +228,8 @@ def get_macro() -> tuple[list[dict], str | None]:
             }
         )
     result = (indicators, datetime.now(timezone.utc).isoformat() if indicators else None)
+    health.record("macro", bool(indicators), ms=(time.perf_counter() - started) * 1000, items=len(indicators),
+                  detail=f"{len(indicators)} of {len(MACRO_SERIES)} series")
     if indicators:
         _memory["macro"] = (time.time(), result)
     return result
@@ -205,9 +246,11 @@ def get_indices() -> tuple[list[dict], str | None]:
     hit = _memory.get("indices")
     if hit and time.time() - hit[0] < INDEX_TTL_SECONDS:
         return hit[1]
+    started = time.perf_counter()
     try:
         closes = _download(list(INDEX_SERIES), period="3mo")
-    except Exception:
+    except Exception as exc:
+        health.record("indices", False, detail=type(exc).__name__)
         return [], None
 
     indices, last_date = [], None
@@ -228,6 +271,8 @@ def get_indices() -> tuple[list[dict], str | None]:
         )
         last_date = series.index[-1].date().isoformat()
     result = (indices, last_date)
+    health.record("indices", bool(indices), ms=(time.perf_counter() - started) * 1000, items=len(indices),
+                  detail=f"index close of {last_date}" if last_date else "no index data")
     if indices:
         _memory["indices"] = (time.time(), result)
     return result

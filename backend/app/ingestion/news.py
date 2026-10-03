@@ -4,6 +4,8 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
+from app.tools import health
+
 FEED_URL = "https://news.google.com/rss/search"
 CACHE_TTL_SECONDS = 300
 
@@ -42,6 +44,7 @@ def get_news(query: str, limit: int = 8) -> list[dict[str, str | None]]:
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL_SECONDS:
         return hit[1]
+    started = time.perf_counter()
     try:
         response = httpx.get(
             FEED_URL,
@@ -51,7 +54,10 @@ def get_news(query: str, limit: int = 8) -> list[dict[str, str | None]]:
         )
         response.raise_for_status()
         items = parse_feed(response.text, limit)
-    except (httpx.HTTPError, ET.ParseError):
+    except (httpx.HTTPError, ET.ParseError) as exc:
+        health.record("news", False, detail=type(exc).__name__)
         return []
+    health.record("news", True, ms=(time.perf_counter() - started) * 1000, items=len(items),
+                  detail=f"{len(items)} headlines")
     _cache[key] = (time.time(), items)
     return items

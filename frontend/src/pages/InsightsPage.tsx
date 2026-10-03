@@ -48,6 +48,35 @@ interface PortfolioInsights {
     truncated: boolean
   }
   events: MarketEvent[]
+  weather: ChartWeather | null
+}
+
+type WeatherKind = 'rain' | 'wind' | 'heat'
+
+interface WeatherMark {
+  index: number
+  site: number
+  kind: WeatherKind
+  value: number
+  date: string
+  days: number
+}
+
+// Days that crossed an alert threshold at each site, placed on the chart's dates.
+interface ChartWeather {
+  sites: { name: string; relevance: string; holdings: { name: string; operation: string }[] }[]
+  marks: WeatherMark[]
+  forecast: { dates: string[]; flags: { site: number; date: string; kind: WeatherKind; value: number }[] } | null
+  thresholds: { rain_mm: number; gust_kmh: number; temp_c: number }
+  through: string
+  source: string
+}
+
+interface Lane {
+  site: number
+  name: string
+  holdings: string[]
+  emphasised: boolean
 }
 
 interface WeatherDay {
@@ -90,6 +119,21 @@ const RANGES: { id: Range; label: string }[] = [
 const SERIES_COLORS = Array.from({ length: 8 }, (_, i) => `var(--viz-series-${i + 1})`)
 const MAX_SELECTED = 4
 const DEFAULT_SELECTED = 3
+
+// Each kind of alert day has its own row inside a site's lane as well as its own
+// colour, so the kinds can be told apart without colour. Checked with the palette validator.
+const WEATHER_KINDS: Record<WeatherKind, { label: string; unit: string; color: string; row: number }> = {
+  rain: { label: 'heavy rain', unit: 'mm', color: 'var(--viz-series-1)', row: 0 },
+  wind: { label: 'gale gusts', unit: 'km/h', color: 'var(--viz-series-7)', row: 1 },
+  heat: { label: 'extreme heat', unit: '°C', color: 'var(--viz-series-2)', row: 2 },
+}
+const KIND_ORDER: WeatherKind[] = ['rain', 'wind', 'heat']
+const LANE_H = 14
+const LANE_GAP = 3
+const KIND_H = 4
+const SHORT_SITE: Record<string, string> = { Visakhapatnam: 'Vizag' }
+const shortSite = (name: string) => SHORT_SITE[name] ?? name
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 const inr = (value: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value)
@@ -154,15 +198,26 @@ const PriceChart: React.FC<{
   lines: Line[]
   events: MarketEvent[]
   activeEventId: string | null
-}> = ({ dates, lines, events, activeEventId }) => {
+  weather: ChartWeather | null
+  lanes: Lane[]
+}> = ({ dates, lines, events, activeEventId, weather, lanes }) => {
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
 
-  const height = 340
-  const margin = { top: 26, right: width < 520 ? 14 : 118, bottom: 30, left: 42 }
+  // The price plot, its date axis, then one lane per weather site on the same dates.
+  const wide = width >= 520
+  const margin = { top: 26, right: wide ? (lanes.length ? 128 : 118) : 14, bottom: 30, left: 42 }
+  const plotH = 284
   const plotW = Math.max(0, width - margin.left - margin.right)
-  const plotH = height - margin.top - margin.bottom
   const last = dates.length - 1
+  // On a narrow screen there is no room beside a lane, so its name goes above it.
+  const laneGap = wide ? LANE_GAP : 13
+  const captionY = margin.top + plotH + margin.bottom + 9
+  const lanesTop = captionY + (wide ? 5 : 17)
+  const lanesH = lanes.length ? lanes.length * (LANE_H + laneGap) - laneGap : 0
+  const height = lanes.length ? lanesTop + lanesH + 4 : margin.top + plotH + margin.bottom
+  const laneY = (lane: number) => lanesTop + lane * (LANE_H + laneGap)
+  const bottom = lanes.length ? lanesTop + lanesH : margin.top + plotH
 
   const all = lines.flatMap((l) => l.values).filter((v): v is number => v !== null)
   const lo = Math.min(...all, 100)
@@ -220,6 +275,18 @@ const PriceChart: React.FC<{
     margin.right > 60 && ends.every((l, i) => i === 0 || y(l.end) - y(ends[i - 1].end) >= 13)
 
   const eventsAt = (index: number) => events.filter((e) => e.index === index)
+
+  const laneOf = useMemo(() => new Map(lanes.map((lane, i) => [lane.site, i])), [lanes])
+  const marks = useMemo(
+    () => (weather ? weather.marks.filter((m) => laneOf.has(m.site)) : []),
+    [weather, laneOf],
+  )
+  const marksAt = (index: number) => marks.filter((m) => m.index === index)
+  const markW = Math.max(2, last > 0 ? plotW / last : 2)
+  // The forecast days still ahead sit to the right of the last price, when there is room.
+  const ahead = wide && weather?.forecast?.dates.length ? weather.forecast : null
+  const aheadX = margin.left + plotW + 10
+  const CELL = 6
   const move = (clientX: number, target: Element) => {
     const box = target.getBoundingClientRect()
     const ratio = (clientX - box.left) / box.width
@@ -232,7 +299,7 @@ const PriceChart: React.FC<{
   return (
     <div ref={ref} className="relative w-full" style={{ height }}>
       {width > 0 && (
-        <svg width={width} height={height} role="img" aria-label="Indexed price history of selected holdings with past events marked">
+        <svg width={width} height={height} role="img" aria-label="Indexed price history of selected holdings with past events marked, and weather alert days by site below">
           {ticks.map((tick) => (
             <g key={tick}>
               <line
@@ -249,7 +316,7 @@ const PriceChart: React.FC<{
             </g>
           ))}
           {xTicks.map((tick) => (
-            <text key={tick.index} x={x(tick.index)} y={height - 8} textAnchor="middle" fontSize={11} fill="var(--viz-muted)">
+            <text key={tick.index} x={x(tick.index)} y={margin.top + plotH + 22} textAnchor="middle" fontSize={11} fill="var(--viz-muted)">
               {tick.label}
             </text>
           ))}
@@ -291,9 +358,80 @@ const PriceChart: React.FC<{
             </g>
           ))}
 
+          {/* Weather lanes: alert days at each site, on the same dates as the prices */}
+          {lanes.length > 0 && (
+            <g>
+              <text x={margin.left} y={captionY} fontSize={10} fill="var(--viz-muted)">
+                Weather alert days by site
+              </text>
+              {ahead && (
+                <text x={aheadX} y={captionY} fontSize={10} fill="var(--viz-muted)">
+                  next {ahead.dates.length} days
+                </text>
+              )}
+              {lanes.map((lane, i) => (
+                <g key={lane.site}>
+                  <rect x={margin.left} y={laneY(i)} width={plotW} height={LANE_H} rx={3} fill="var(--viz-grid)" opacity={0.45} />
+                  {ahead?.dates.map((day, d) => {
+                    const flags = ahead.flags.filter((f) => f.site === lane.site && f.date === day)
+                    return (
+                      <g key={day}>
+                        <title>
+                          {`${lane.name}, ${shortDate(day)} forecast: ${
+                            flags.length
+                              ? flags.map((f) => `${WEATHER_KINDS[f.kind].label} ${f.value} ${WEATHER_KINDS[f.kind].unit}`).join(', ')
+                              : 'no alert'
+                          }`}
+                        </title>
+                        <rect x={aheadX + d * CELL} y={laneY(i)} width={CELL - 1} height={LANE_H} rx={1} fill="var(--viz-grid)" opacity={0.45} />
+                        {flags.map((f) => (
+                          <rect
+                            key={f.kind}
+                            x={aheadX + d * CELL}
+                            y={laneY(i) + 1 + WEATHER_KINDS[f.kind].row * KIND_H}
+                            width={CELL - 1}
+                            height={KIND_H}
+                            fill={WEATHER_KINDS[f.kind].color}
+                          />
+                        ))}
+                      </g>
+                    )
+                  })}
+                  <text
+                    x={wide ? aheadX + (ahead ? ahead.dates.length * CELL + 7 : 0) : margin.left}
+                    y={wide ? laneY(i) + 10.5 : laneY(i) - 3}
+                    fontSize={wide ? 11 : 10}
+                    fontWeight={lane.emphasised ? 600 : 400}
+                    fill={lane.emphasised ? 'var(--viz-ink)' : 'var(--viz-ink-2)'}
+                  >
+                    <title>
+                      {lane.holdings.length ? `${lane.name}: ${lane.holdings.join('; ')}` : `${lane.name}: none of your holdings operates here`}
+                    </title>
+                    {shortSite(lane.name)}
+                  </text>
+                </g>
+              ))}
+              {marks.map((mark) => {
+                const half = markW / 2
+                const left = Math.max(margin.left, x(mark.index) - half)
+                const right = Math.min(margin.left + plotW, x(mark.index) + half)
+                return (
+                  <rect
+                    key={`${mark.index}-${mark.site}-${mark.kind}`}
+                    x={left}
+                    y={laneY(laneOf.get(mark.site) ?? 0) + 1 + WEATHER_KINDS[mark.kind].row * KIND_H}
+                    width={Math.max(2, right - left)}
+                    height={KIND_H}
+                    fill={WEATHER_KINDS[mark.kind].color}
+                  />
+                )
+              })}
+            </g>
+          )}
+
           {hover !== null && (
             <g pointerEvents="none">
-              <line x1={x(hover)} x2={x(hover)} y1={margin.top} y2={margin.top + plotH} stroke="var(--viz-ink-2)" strokeWidth={1} />
+              <line x1={x(hover)} x2={x(hover)} y1={margin.top} y2={bottom} stroke="var(--viz-ink-2)" strokeWidth={1} />
               {lines.map((line) => {
                 const value = line.values[hover]
                 return value === null || value === undefined ? null : (
@@ -307,7 +445,7 @@ const PriceChart: React.FC<{
             x={margin.left}
             y={margin.top - 18}
             width={plotW}
-            height={plotH + 18}
+            height={bottom - margin.top + 18}
             fill="transparent"
             tabIndex={0}
             aria-label="Price chart. Use the left and right arrow keys to read values."
@@ -351,6 +489,22 @@ const PriceChart: React.FC<{
               <span className="block text-groww-text-secondary">{shortDate(event.date)}</span>
             </p>
           ))}
+          {marksAt(hover).length > 0 && (
+            <ul className="mt-2 pt-2 border-t border-groww-border-light flex flex-col gap-1">
+              {marksAt(hover).map((mark) => (
+                <li key={`${mark.site}-${mark.kind}`} className="flex items-start gap-2">
+                  <span className="mt-1 w-3 h-1 rounded-sm shrink-0" style={{ background: WEATHER_KINDS[mark.kind].color }} />
+                  <span className="text-groww-text-secondary">
+                    <span className="font-semibold text-groww-text-primary">
+                      {weather?.sites[mark.site].name}: {WEATHER_KINDS[mark.kind].label}
+                    </span>{' '}
+                    {mark.value} {WEATHER_KINDS[mark.kind].unit}
+                    {mark.days > 1 ? `, worst of ${mark.days} alert days (${shortDate(mark.date)})` : ` on ${shortDate(mark.date)}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
@@ -452,6 +606,7 @@ const InsightsPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false)
   const [selected, setSelected] = useState<string[] | null>(null)
   const [activeEventId, setActiveEventId] = useState<string | null>(null)
+  const [weatherView, setWeatherView] = useState<'mine' | 'all' | 'off'>('mine')
 
   const loadPortfolio = useCallback(async () => {
     if (!user?.id) return
@@ -543,6 +698,29 @@ const InsightsPage: React.FC = () => {
     const values = visibleEvents.map(pick).filter((v): v is number => v !== null && v !== undefined)
     return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null
   }
+
+  // Weather lanes under the price chart: the sites where the user's holdings operate.
+  const chartWeather = data?.weather ?? null
+  const chosenNames = new Set(chosenSeries.map((s) => s.name))
+  const allLanes: Lane[] = (chartWeather?.sites ?? []).map((site, index) => ({
+    site: index,
+    name: site.name,
+    holdings: site.holdings.map((h) => `${h.name} (${h.operation})`),
+    emphasised: site.holdings.some((h) => chosenNames.has(h.name)),
+  }))
+  const myLanes = allLanes.filter((lane) => lane.holdings.length > 0)
+  const lanes = weatherView === 'off' ? [] : weatherView === 'all' || myLanes.length === 0 ? allLanes : myLanes
+  const laneStats = lanes.map((lane) => {
+    const own = (chartWeather?.marks ?? []).filter((m) => m.site === lane.site)
+    return {
+      lane,
+      kinds: KIND_ORDER.map((kind) => {
+        const of = own.filter((m) => m.kind === kind)
+        const peak = of.reduce<WeatherMark | null>((best, m) => (best === null || m.value > best.value ? m : best), null)
+        return { kind, days: of.reduce((sum, m) => sum + m.days, 0), peak }
+      }),
+    }
+  })
 
   const sectorWeights = new Map(data?.sectors.map((s) => [s.sector, s]) ?? [])
   const maxSector = Math.max(...(data?.sectors.map((s) => s.weight) ?? [1]))
@@ -743,12 +921,27 @@ const InsightsPage: React.FC = () => {
                   ))}
                 </select>
               </label>
+              {chartWeather && (
+                <label className="flex items-center gap-2 text-xs text-groww-text-secondary">
+                  Weather
+                  <select
+                    id="insights-weather-view"
+                    value={weatherView}
+                    onChange={(e) => setWeatherView(e.target.value as typeof weatherView)}
+                    className="rounded-xl border border-groww-border bg-white px-2.5 py-1.5 text-xs text-groww-text-primary outline-none focus:border-groww-green"
+                  >
+                    <option value="mine">Sites of my holdings</option>
+                    <option value="all">All {chartWeather.sites.length} sites</option>
+                    <option value="off">Hidden</option>
+                  </select>
+                </label>
+              )}
             </div>
 
             <div className={`flex flex-col gap-4 sm:gap-6 transition-opacity duration-200 ${refreshing ? 'opacity-60' : ''}`}>
               <Card
                 id="insights-prices"
-                title="Price history and past events"
+                title="Price history, past events and weather"
                 subtitle={`Indexed to 100 at the start of the period. ${
                   selected === null ? 'Showing the holdings that moved most after the events in view.' : ''
                 } Pick up to ${MAX_SELECTED} holdings.`}
@@ -780,11 +973,82 @@ const InsightsPage: React.FC = () => {
                     )
                   })}
                 </div>
-                <PriceChart dates={data.prices.dates} lines={lines} events={visibleEvents} activeEventId={activeEventId} />
+                <PriceChart
+                  dates={data.prices.dates}
+                  lines={lines}
+                  events={visibleEvents}
+                  activeEventId={activeEventId}
+                  weather={chartWeather}
+                  lanes={lanes}
+                />
                 <p className="mt-2 text-[11px] text-groww-text-muted">
                   ▼ marks a past event; the table below lists each one.
                   {data.prices.truncated && ' Only the eight largest holdings can be plotted.'}
                 </p>
+                {chartWeather === null && (
+                  <p className="mt-1 text-[11px] text-groww-text-muted">Weather history is unavailable, so the chart shows prices and events only.</p>
+                )}
+                {chartWeather && lanes.length > 0 && (
+                  <div id="insights-weather-lanes" className="mt-3 pt-3 border-t border-groww-border-light">
+                    <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-[11px] text-groww-text-secondary">
+                      {KIND_ORDER.map((kind) => {
+                        const spec = WEATHER_KINDS[kind]
+                        const threshold = { rain: `${chartWeather.thresholds.rain_mm} mm in a day`, wind: `gusts of ${chartWeather.thresholds.gust_kmh} km/h`, heat: `${chartWeather.thresholds.temp_c} °C` }[kind]
+                        return (
+                          <li key={kind} className="flex items-center gap-2">
+                            <span className="relative w-5 rounded-sm" style={{ height: LANE_H, background: 'color-mix(in oklab, var(--viz-grid) 45%, var(--viz-surface))' }} aria-hidden>
+                              <span className="absolute inset-x-0" style={{ top: 1 + spec.row * KIND_H, height: KIND_H, background: spec.color }} />
+                            </span>
+                            <span>
+                              <span className="font-medium text-groww-text-primary">{sentence(spec.label)}</span>: {threshold} or more
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    <div className="mt-3 overflow-x-auto -mx-1">
+                      <table className="w-full min-w-[680px] text-xs tabular-nums">
+                        <caption className="sr-only">Weather alert days at each site in the period shown</caption>
+                        <thead>
+                          <tr className="text-left text-groww-text-muted">
+                            <th className="font-medium py-1.5 px-1">Site</th>
+                            <th className="font-medium py-1.5 px-1">Your holdings there</th>
+                            {KIND_ORDER.map((kind) => (
+                              <th key={kind} className="font-medium py-1.5 px-1 text-right">{sentence(WEATHER_KINDS[kind].label)} days</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {laneStats.map(({ lane, kinds }) => (
+                            <tr key={lane.site} className="border-t border-groww-border-light align-top">
+                              <td className={`py-1.5 px-1 whitespace-nowrap ${lane.emphasised ? 'font-semibold text-groww-text-primary' : 'text-groww-text-primary'}`}>
+                                {lane.name}
+                              </td>
+                              <td className="py-1.5 px-1 min-w-[220px] text-groww-text-secondary">
+                                {lane.holdings.length ? lane.holdings.join('; ') : 'None'}
+                              </td>
+                              {kinds.map(({ kind, days, peak }) => (
+                                <td key={kind} className="py-1.5 px-1 text-right whitespace-nowrap">
+                                  <span className="text-groww-text-primary">{days}</span>
+                                  {peak && (
+                                    <span className="block text-groww-text-muted">
+                                      peak {peak.value} {WEATHER_KINDS[kind].unit}, {shortDate(peak.date)}
+                                    </span>
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mt-2 text-[11px] text-groww-text-muted">
+                      {weatherView === 'mine' && myLanes.length === 0 && 'None of your holdings has a mapped site, so all sites are shown. '}
+                      Weather history to {shortDate(chartWeather.through)}.
+                      {chartWeather.forecast === null && ' The 7-day forecast is unavailable right now.'} Source: {chartWeather.source}.
+                    </p>
+                  </div>
+                )}
               </Card>
 
               <Card

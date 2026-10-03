@@ -8,10 +8,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.agents.nodes import EVENT_TYPES, HORIZON_SESSIONS
-from app.risk import metrics
+from app.risk import exposure, metrics
 from app.tools.events import load_events
 from app.tools.market import NIFTY, get_history, normalise_holdings
-from app.tools.weather import GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, get_weather_outlook
+from app.tools.weather import (
+    GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, KINDS, LOCATIONS, get_weather_history, get_weather_outlook, holdings_at,
+)
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
@@ -35,35 +37,11 @@ def portfolio(request: PortfolioRequest) -> dict:
     if closes is None:
         raise HTTPException(status_code=503, detail="Price history is unavailable right now.")
 
-    latest = closes.iloc[-1]
-    positions = []
-    for h in holdings:
-        price = _number(latest.get(h["ticker"]))
-        if price is not None:
-            positions.append({**h, "price": price, "value": round(price * h["units"], 2)})
-    if not positions:
+    view = exposure.snapshot(holdings, closes)
+    if view is None:
         raise HTTPException(status_code=422, detail="None of the holdings could be priced.")
-    positions.sort(key=lambda p: -p["value"])
-    total = sum(p["value"] for p in positions)
-    for p in positions:
-        p["weight"] = round(p["value"] / total, 4)
-    weights = {p["ticker"]: p["value"] / total for p in positions}
-
-    sectors: dict[str, dict] = {}
-    for p in positions:
-        entry = sectors.setdefault(p["sector"], {"sector": p["sector"], "value": 0.0, "holdings": []})
-        entry["value"] += p["value"]
-        entry["holdings"].append(p["name"])
-    sector_rows = sorted(
-        ({**s, "value": round(s["value"], 2), "weight": round(s["value"] / total, 4)} for s in sectors.values()),
-        key=lambda s: -s["value"],
-    )
-
-    returns = metrics.daily_returns(closes)
-    var = metrics.historical_var(metrics.portfolio_returns(returns, weights))
-    betas = {t: metrics.beta(returns[t], returns[NIFTY]) for t in weights}
-    known = {t: b for t, b in betas.items() if b is not None}
-    beta_value = sum(weights[t] * b for t, b in known.items()) if known else None
+    positions, total, var, beta_value = view["positions"], view["total"], view["var"], view["beta"]
+    sector_rows = [{**s, "value": round(s["value"], 2), "weight": round(s["weight"], 4)} for s in view["sectors"]]
 
     # Price series, indexed to 100 at the start of the window so every holding
     # and the index share one axis.
@@ -113,12 +91,12 @@ def portfolio(request: PortfolioRequest) -> dict:
             "var_1d": _number(var[0] * total) if var else None,
             "var_1d_pct": _number(var[0], 4) if var else None,
             "beta": _number(beta_value),
-            "largest": {"name": positions[0]["name"], "weight": positions[0]["weight"]},
+            "largest": {"name": positions[0]["name"], "weight": round(positions[0]["weight"], 4)},
         },
         "sectors": sector_rows,
         "positions": [
             {"ticker": p["ticker"], "name": p["name"], "sector": p["sector"],
-             "value": p["value"], "weight": p["weight"], "beta": _number(betas.get(p["ticker"]))}
+             "value": round(p["value"], 2), "weight": round(p["weight"], 4), "beta": _number(p["beta"])}
             for p in positions
         ],
         "prices": {
@@ -128,6 +106,57 @@ def portfolio(request: PortfolioRequest) -> dict:
             "truncated": len(positions) > MAX_SERIES,
         },
         "events": events,
+        "weather": _weather_on(window.index, positions),
+    }
+
+
+def _weather_on(dates: pd.DatetimeIndex, positions: list[dict]) -> dict | None:
+    """Alert days at each site, placed on the chart's dates, plus the forecast
+    days still ahead of the last price. None when the weather history is missing."""
+    history = get_weather_history()
+    if history is None:
+        return None
+    first, last = dates[0], len(dates) - 1
+    marks: dict[tuple[int, int, str], dict] = {}
+    for site_index, place in enumerate(LOCATIONS):
+        for day, kind, value in history["sites"].get(place["name"], []):
+            stamp = pd.Timestamp(day)
+            if stamp < first:
+                continue
+            # A weekly point stands for the days up to it; a weekend falls to the next session.
+            slot = min(int(dates.searchsorted(stamp)), last)
+            mark = marks.setdefault((slot, site_index, kind),
+                                    {"index": slot, "site": site_index, "kind": kind, "value": value, "date": day, "days": 0})
+            mark["days"] += 1
+            if value > mark["value"]:
+                mark.update(value=value, date=day)
+
+    outlook = get_weather_outlook()
+    ahead = None
+    if outlook is not None:
+        by_name = {site["name"]: site for site in outlook}
+        today = pd.Timestamp.now(tz="Asia/Kolkata").date().isoformat()
+        days = sorted({d["date"] for site in outlook for d in site["days"] if d["date"] >= today})
+        fields = {"rain": "rain_mm", "wind": "gust_kmh", "heat": "temp_c"}
+        ahead = {
+            "dates": days,
+            "flags": [
+                {"site": site_index, "date": d["date"], "kind": kind, "value": d[fields[kind]]}
+                for site_index, place in enumerate(LOCATIONS)
+                for d in by_name.get(place["name"], {}).get("days", [])
+                for kind, (_, threshold) in KINDS.items()
+                if d["date"] >= today and d[fields[kind]] is not None and d[fields[kind]] >= threshold
+            ],
+        }
+    return {
+        "sites": [{"name": place["name"], "relevance": place["relevance"],
+                   "holdings": [{"name": h["name"], "operation": h["operation"]} for h in holdings_at(place, positions)]}
+                  for place in LOCATIONS],
+        "marks": sorted(marks.values(), key=lambda m: (m["index"], m["site"], m["kind"])),
+        "forecast": ahead,
+        "thresholds": {"rain_mm": HEAVY_RAIN_MM, "gust_kmh": GALE_GUST_KMH, "temp_c": HEAT_C},
+        "through": history["through"],
+        "source": history["source"],
     }
 
 

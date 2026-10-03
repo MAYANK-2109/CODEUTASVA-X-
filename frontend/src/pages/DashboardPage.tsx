@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
 import NotificationBell from '../components/NotificationBell'
+import RiskTerminal from '../components/RiskTerminal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,8 @@ const DashboardPage: React.FC = () => {
   const [newsLoading, setNewsLoading] = useState(true)
   const [newsFilter, setNewsFilter] = useState('ALL')
   const [newsSearch, setNewsSearch] = useState('')
+  // Bumped by the refresh button so the risk overview reloads with everything else.
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Backend URL resolution
   const backendUrl =
@@ -496,6 +499,7 @@ const DashboardPage: React.FC = () => {
                 fetchPortfolioData()
                 fetchNewsData()
                 fetchMarketData()
+                setRefreshKey((key) => key + 1)
               }}
               title="Refresh live data"
               className="w-9 h-9 rounded-xl border border-groww-border-light flex items-center justify-center text-groww-text-secondary hover:text-groww-green hover:border-groww-green hover:bg-groww-green-light/40 transition-all duration-200"
@@ -522,7 +526,10 @@ const DashboardPage: React.FC = () => {
         </header>
 
         {/* ── Dashboard Body Grid (Matching Reference Wireframe Layout) ────── */}
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto flex flex-col gap-6">
+          {/* Risk first: what could be lost, where, what needs attention, and feed health */}
+          <RiskTerminal backendUrl={backendUrl} refreshKey={refreshKey} />
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
             {/* ════════════════════════════════════════════════════════════════
@@ -551,7 +558,7 @@ const DashboardPage: React.FC = () => {
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100/70 text-groww-green-dark border border-emerald-200/60">
                       <IconSparkle />
-                      Welcome to your Portfolio Terminal
+                      Market today
                     </span>
                     <span className="text-xs text-groww-text-muted hidden sm:inline-flex items-center gap-1">
                       <IconClock />
@@ -562,13 +569,9 @@ const DashboardPage: React.FC = () => {
                   </div>
 
                   {/* Main Greeting */}
-                  <h2 className="text-2xl sm:text-3xl font-extrabold text-groww-text-primary tracking-tight">
+                  <h2 className="text-xl sm:text-2xl font-extrabold text-groww-text-primary tracking-tight">
                     {greeting}, <span className="text-groww-green capitalize">{displayName}</span>
                   </h2>
-
-                  <p className="text-sm text-groww-text-secondary mt-2 max-w-xl leading-relaxed">
-                    Your financial dashboard is up to date. Monitor your live stock performance, track real-time profit margins, and stay informed with the latest market news trail below.
-                  </p>
 
                   {/* Market Quick Metrics Banner */}
                   <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-emerald-100/70">

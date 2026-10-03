@@ -21,11 +21,30 @@ interface Hedge {
   evidence: string
 }
 
+interface ForecastMove {
+  mean: number
+  min: number
+  max: number
+  n: number
+}
+
+// Average move over the sessions after comparable past events, with the range seen.
+interface Forecast {
+  horizon_sessions: number
+  events: number
+  portfolio: { mean: number; pnl: number; worst: number; best: number; evidence: string }
+  holdings: (ForecastMove & { name: string; pnl: number })[]
+  holdings_evidence: string | null
+  cross_assets: (ForecastMove & { label: string })[]
+  cross_assets_evidence: string | null
+}
+
 interface Answer {
   text: string
   evidence: Evidence[]
   hedges: Hedge[]
   action: 'hedge' | 'monitor' | 'no_hedge' | 'none'
+  forecast?: Forecast | null
   gaps: string[]
   writer: 'llm' | 'template'
 }
@@ -134,6 +153,147 @@ const Inline: React.FC<{ text: string; onCite: (id: string) => void; active: str
 )
 
 // ---------------------------------------------------------------------------
+// Forecast: expected move per holding and per commodity, shown whatever the
+// hedge decision. Bar = average across the past events, line = lowest to highest.
+// ---------------------------------------------------------------------------
+const FORECAST_ROWS = 6
+const RANGE_ROOM = 2.5 // how far past the largest average the scale extends
+const signedPct = (fraction: number) => {
+  const value = (fraction * 100).toFixed(1)
+  return Number(value) === 0 ? '0.0%' : `${fraction > 0 ? '+' : ''}${value}%`
+}
+const signedInr = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatInr(Math.abs(value))}`
+
+const ForecastGroup: React.FC<{
+  title: string
+  evidenceId: string | null
+  rows: (ForecastMove & { label: string; amount?: number })[]
+  horizon: number
+  onCite: (id: string) => void
+  active: string | null
+}> = ({ title, evidenceId, rows, horizon, onCite, active }) => {
+  const [all, setAll] = useState(false)
+  // One scale for the group so bars compare across rows. It is set by the averages;
+  // a range that runs past it is cut at the edge and marked with an arrow.
+  const widest = Math.max(...rows.flatMap((r) => [Math.abs(r.min), Math.abs(r.max)]), 0.001)
+  const reach = Math.min(widest, Math.max(...rows.map((r) => Math.abs(r.mean)), 0.001) * RANGE_ROOM)
+  const at = (fraction: number) => 50 + (Math.max(-reach, Math.min(reach, fraction)) / reach) * 50
+  const shown = all ? rows : rows.slice(0, FORECAST_ROWS)
+  return (
+    <div>
+      <p className="flex items-center gap-1 text-[11px] font-semibold text-groww-text-secondary">
+        {title}
+        {evidenceId && <Inline text={`[${evidenceId}]`} onCite={onCite} active={active} />}
+      </p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {shown.map((row) => {
+          const down = row.mean < 0
+          return (
+            <li
+              key={row.label}
+              className="flex items-center gap-2 text-[11px] tabular-nums"
+              title={`${row.label}: average ${signedPct(row.mean)} over ${horizon} sessions${
+                row.amount === undefined ? '' : ` (${signedInr(row.amount)})`
+              }; lowest ${signedPct(row.min)}, highest ${signedPct(row.max)} across ${row.n} past event${row.n === 1 ? '' : 's'}`}
+            >
+              <span className="w-[34%] truncate text-groww-text-primary">{row.label}</span>
+              <span className="relative flex-1 h-3 mx-1.5" aria-hidden>
+                <span className="absolute inset-y-0 left-1/2 w-px bg-[color:var(--viz-axis)]" />
+                {row.min < -reach && (
+                  <span className="absolute right-full top-1/2 -translate-y-1/2 leading-none text-[9px] text-[color:var(--viz-muted)]">◂</span>
+                )}
+                {row.max > reach && (
+                  <span className="absolute left-full top-1/2 -translate-y-1/2 leading-none text-[9px] text-[color:var(--viz-muted)]">▸</span>
+                )}
+                <span
+                  className="absolute top-1/2 h-px bg-[color:var(--viz-muted)]"
+                  style={{ left: `${at(row.min)}%`, width: `${Math.max(at(row.max) - at(row.min), 0.5)}%` }}
+                />
+                <span
+                  className={`absolute top-0.5 bottom-0.5 ${down ? 'rounded-l' : 'rounded-r'}`}
+                  style={{
+                    left: `${down ? at(row.mean) : 50}%`,
+                    width: `${Math.max(Math.abs(at(row.mean) - 50), 0.8)}%`,
+                    background: down ? 'var(--viz-critical)' : 'var(--viz-good)',
+                  }}
+                />
+              </span>
+              <span
+                className="w-11 text-right font-semibold"
+                style={{ color: down ? 'var(--viz-critical)' : row.mean > 0 ? 'var(--viz-good-text)' : undefined }}
+              >
+                {signedPct(row.mean)}
+              </span>
+              {row.amount !== undefined && (
+                <span className="w-[62px] text-right text-groww-text-secondary">{signedInr(row.amount)}</span>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {rows.length > FORECAST_ROWS && (
+        <button onClick={() => setAll((v) => !v)} className="mt-1 text-[11px] text-groww-green hover:underline">
+          {all ? 'Show fewer' : `Show all ${rows.length}`}
+        </button>
+      )}
+    </div>
+  )
+}
+
+const ForecastCard: React.FC<{ forecast: Forecast; onCite: (id: string) => void; active: string | null }> = ({
+  forecast,
+  onCite,
+  active,
+}) => {
+  // Largest rupee effect first, falls before rises.
+  const holdings = [...forecast.holdings]
+    .sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl))
+    .map((h) => ({ ...h, label: h.name, amount: h.pnl }))
+  const plural = forecast.events === 1 ? '' : 's'
+  return (
+    <div id="chat-forecast" className="viz-root mt-3 rounded-xl border border-groww-border px-3 py-2.5 flex flex-col gap-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs font-bold text-groww-text-primary">Forecast · next {forecast.horizon_sessions} sessions</p>
+        <p className="text-[11px] text-groww-text-muted">
+          average of {forecast.events} past event{plural}
+        </p>
+      </div>
+      <p className="text-[11px] text-groww-text-secondary -mt-1.5">
+        Portfolio {signedPct(forecast.portfolio.mean)} ({signedInr(forecast.portfolio.pnl)}); past cases ranged from{' '}
+        {signedPct(forecast.portfolio.worst)} to {signedPct(forecast.portfolio.best)}
+        <Inline text={`[${forecast.portfolio.evidence}]`} onCite={onCite} active={active} />
+      </p>
+      {holdings.length > 0 && (
+        <ForecastGroup
+          title="Your holdings"
+          evidenceId={forecast.holdings_evidence}
+          rows={holdings}
+          horizon={forecast.horizon_sessions}
+          onCite={onCite}
+          active={active}
+        />
+      )}
+      {forecast.cross_assets.length > 0 ? (
+        <ForecastGroup
+          title="Commodities and the rupee"
+          evidenceId={forecast.cross_assets_evidence}
+          rows={forecast.cross_assets}
+          horizon={forecast.horizon_sessions}
+          onCite={onCite}
+          active={active}
+        />
+      ) : (
+        <p className="text-[11px] text-groww-text-muted">Commodity prices were unavailable, so there is no commodity forecast.</p>
+      )}
+      <p className="text-[10px] text-groww-text-muted leading-snug">
+        Bar: average move after the past events. Line: lowest to highest, with an arrow where it runs past
+        the scale. A small sample, so read it as a range, not a prediction. A rise in USD/INR is a weaker rupee.
+      </p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Pipeline progress
 // ---------------------------------------------------------------------------
 const PipelineView: React.FC<{ steps: Record<string, Step>; finished: boolean }> = ({ steps, finished }) => {
@@ -192,7 +352,9 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
 
   const finished = Boolean(answer || error)
   const active = answer?.evidence.find((e) => e.id === activeId)
-  const totalMs = Object.values(steps).reduce((sum, s) => sum + s.ms, 0)
+  const cite = (id: string) => setActiveId((current) => (current === id ? null : id))
+  // Agents in the same row ran side by side, so a row takes as long as its slowest agent.
+  const totalMs = PIPELINE.reduce((sum, row) => sum + Math.max(0, ...row.map((a) => steps[a.id]?.ms ?? 0)), 0)
 
   return (
     <div className="flex flex-col gap-2 text-sm text-groww-text-primary">
@@ -210,7 +372,6 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
 
           <div className="flex flex-col gap-1.5 leading-relaxed">
             {answer.text.split('\n').map((line, i) => {
-              const cite = (id: string) => setActiveId((current) => (current === id ? null : id))
               if (line.startsWith('## ')) {
                 return (
                   <h4 key={i} className="mt-2 text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">
@@ -245,6 +406,8 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
               <p className="mt-1 text-groww-text-muted">Source: {active.source}</p>
             </div>
           )}
+
+          {answer.forecast && <ForecastCard forecast={answer.forecast} onCite={cite} active={activeId} />}
 
           {answer.hedges.length > 0 && (
             <div className="mt-3 flex flex-col gap-1.5">

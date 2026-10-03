@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 import yfinance as yf
 
+from app.tools import health
+
 FRESH_SECONDS = 60
 # A quote this recent is still shown if a refresh fails, so one bad response
 # from the data source does not blank a price that was known a minute ago.
@@ -36,6 +38,7 @@ def get_latest_prices(tickers: list[str]) -> tuple[dict[str, float], str | None]
     due = [t for t in wanted if t not in _cache or now - _cache[t][0] >= FRESH_SECONDS]
 
     remaining = due
+    started = time.perf_counter()
     for _ in range(2):  # a batch often comes back with a few tickers blank; ask once more
         if not remaining:
             break
@@ -46,6 +49,10 @@ def get_latest_prices(tickers: list[str]) -> tuple[dict[str, float], str | None]
         for ticker, price in fetched.items():
             _cache[ticker] = (now, price)
         remaining = [t for t in remaining if t not in fetched]
+    if due:
+        got = len(due) - len(remaining)
+        health.record("quotes", got > 0, ms=(time.perf_counter() - started) * 1000, items=got,
+                      detail=f"{got} of {len(due)} quotes")
 
     prices = {t: _cache[t][1] for t in wanted if t in _cache and now - _cache[t][0] < STALE_OK_SECONDS}
     as_of = None

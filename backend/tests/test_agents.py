@@ -61,6 +61,8 @@ def offline(monkeypatch):
     monkeypatch.setattr(nodes, "get_macro", lambda: (
         [{"ticker": "^INDIAVIX", "label": "India VIX", "value": 24.0, "change_1m_pct": 30.0}], "now"))
 
+    monkeypatch.setattr(nodes, "get_cross_assets", lambda: None)
+
     def use(closes):
         monkeypatch.setattr(nodes, "get_history", lambda tickers: (closes, "live" if closes is not None else "unavailable"))
 
@@ -352,12 +354,73 @@ def test_gemini_falls_back_to_the_next_model(gemini):
 def test_pipeline_uses_llm_plan_and_grounded_llm_wording(offline, gemini):
     offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
     plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
-    monkeypatch_text = "**Bottom line:** a hedge is recommended [G1].\n- Your portfolio beta is shown in the evidence [R4]."
+    monkeypatch_text = ("**Bottom line:** a hedge is recommended [G1].\n"
+                        "- Forecast for your holdings: Alpha Refining is expected to fall [R7].")
     gemini([plan, gemini_reply(monkeypatch_text)])
     answer = answer_for("Big storm coming, what should I do with my shares?", HOLDING)
     assert answer["planner"] == "llm" and answer["writer"] == "llm"
     assert answer["text"] == monkeypatch_text
     assert answer["action"] == "hedge"
+
+
+def test_llm_wording_that_leaves_out_the_forecast_is_not_used(offline, gemini):
+    offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
+    gemini([plan, gemini_reply("**Bottom line:** a hedge is recommended [G1].")])
+    answer = answer_for("Big storm coming, what should I do with my shares?", HOLDING)
+    assert answer["writer"] == "template"
+    assert "## Forecast for the next 5 sessions" in answer["text"]
+
+
+def holding_events(answer: dict) -> int:
+    """How many past events the answer's event rows list."""
+    return sum("Nifty 50 moved" in e["claim"] for e in answer["evidence"])
+
+
+def cross_asset_closes(crude_jump: float) -> pd.DataFrame:
+    """Flat commodity prices, with crude jumping on every cyclone date. Gold has no data."""
+    index = pd.bdate_range("2013-01-01", "2026-09-30")
+    crude = np.ones(len(index))
+    for date in CYCLONE_DATES:
+        crude[index.searchsorted(pd.Timestamp(date))] += crude_jump
+    return pd.DataFrame({"BZ=F": 80 * np.cumprod(crude), "INR=X": 83.0, "GC=F": np.nan}, index=index)
+
+
+def test_forecast_is_stated_even_when_no_hedge_is_needed(offline, monkeypatch):
+    offline(synthetic_closes(event_drop=0.0, market_drop=0.0))
+    monkeypatch.setattr(nodes, "get_cross_assets", lambda: cross_asset_closes(0.04))
+    answer = answer_for("What does a cyclone do to my portfolio?", HOLDING)
+
+    assert answer["action"] in ("monitor", "no_hedge")
+    forecast = answer["forecast"]
+    assert forecast["horizon_sessions"] == 5 and forecast["events"] == holding_events(answer)
+    holding = forecast["holdings"][0]
+    assert holding["name"] == "Alpha Refining" and holding["min"] <= holding["mean"] <= holding["max"]
+    assets = {a["label"]: a for a in forecast["cross_assets"]}
+    assert set(assets) == {"Brent crude", "USD/INR"}          # gold had no prices, so it is left out
+    assert assets["Brent crude"]["mean"] == pytest.approx(0.04)
+    assert assets["USD/INR"]["mean"] == 0
+
+    # Both forecast rows are cited in the answer, in their own section, and stay grounded.
+    rows = {e["id"]: e["claim"] for e in answer["evidence"]}
+    assert rows[forecast["holdings_evidence"]].startswith("Forecast per holding over 5 sessions")
+    assert "Brent crude +4.0%" in rows[forecast["cross_assets_evidence"]]
+    section = answer["text"].split("## Forecast for the next 5 sessions")[1].split("##")[0]
+    assert f'[{forecast["holdings_evidence"]}]' in section and f'[{forecast["cross_assets_evidence"]}]' in section
+    assert nodes.ungrounded_numbers(answer["text"], answer["evidence"]) == set()
+
+
+def test_forecast_reports_missing_commodity_prices(offline):
+    offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    answer = answer_for("What does a cyclone do to my portfolio?", HOLDING)
+    assert answer["forecast"]["cross_assets"] == [] and answer["forecast"]["cross_assets_evidence"] is None
+    assert any("no commodity forecast" in gap for gap in answer["gaps"])
+    assert answer["forecast"]["holdings"][0]["pnl"] < 0
+
+
+def test_general_question_has_no_forecast(offline):
+    offline(synthetic_closes())
+    assert answer_for("Is my portfolio risky right now?", HOLDING)["forecast"] is None
 
 
 def test_gemini_retries_when_the_model_is_overloaded(gemini):
@@ -393,6 +456,8 @@ def test_insights_portfolio_indexes_prices_and_marks_events(offline, monkeypatch
 
     closes = synthetic_closes(event_drop=-0.12, market_drop=-0.03)
     monkeypatch.setattr(insights, "get_history", lambda tickers: (closes, "live"))
+    monkeypatch.setattr(insights, "get_weather_history", lambda: None)
+    monkeypatch.setattr(insights, "get_weather_outlook", lambda: None)
     response = TestClient(app).post("/api/insights/portfolio", json={"holdings": HOLDING, "range": "3y"})
     assert response.status_code == 200
     body = response.json()
@@ -408,6 +473,63 @@ def test_insights_portfolio_indexes_prices_and_marks_events(offline, monkeypatch
     cyclone = next(e for e in body["events"] if e["type"] == "cyclone")
     assert cyclone["moves"]["AAA.NS"] < -0.05
     assert body["prices"]["dates"][cyclone["index"]] >= cyclone["date"]
+    assert body["weather"] is None  # no weather history: the chart is drawn without the weather lanes
+
+
+def test_insights_places_weather_alert_days_on_the_chart_dates(offline, monkeypatch):
+    from app import insights
+
+    closes = synthetic_closes()
+    history = {"through": "2026-09-29", "source": "test", "sites": {
+        "Jamnagar": [["2012-06-01", "rain", 99.0],                                  # before the chart starts
+                     ["2026-09-21", "rain", 80.0], ["2026-09-23", "rain", 120.5],   # same week: one mark
+                     ["2026-09-23", "wind", 70.0]],
+        "Mumbai": [["2026-09-27", "heat", 41.0]],                                   # a Sunday
+    }}
+    today = pd.Timestamp.now(tz="Asia/Kolkata").date()
+    outlook = [{"name": "Jamnagar", "days": [
+        {"date": (today - pd.Timedelta(days=1)).isoformat(), "rain_mm": 200.0, "gust_kmh": 10.0, "temp_c": 30.0},
+        {"date": today.isoformat(), "rain_mm": 1.0, "gust_kmh": 90.0, "temp_c": None},
+        {"date": (today + pd.Timedelta(days=1)).isoformat(), "rain_mm": 2.0, "gust_kmh": 20.0, "temp_c": 31.0},
+    ]}]
+    monkeypatch.setattr(insights, "get_history", lambda tickers: (closes, "live"))
+    monkeypatch.setattr(insights, "get_weather_history", lambda: history)
+    monkeypatch.setattr(insights, "get_weather_outlook", lambda: outlook)
+    reliance = [{"name": "Reliance Industries", "symbol": "AAA", "units": 10, "type": "STOCK"}]
+
+    def weather(range_):
+        body = TestClient(app).post("/api/insights/portfolio", json={"holdings": reliance, "range": range_}).json()
+        return body["weather"], body["prices"]["dates"]
+
+    view, dates = weather("3y")  # weekly points
+    names = [site["name"] for site in view["sites"]]
+    jamnagar, mumbai = names.index("Jamnagar"), names.index("Mumbai")
+    marks = {(m["site"], m["kind"]): m for m in view["marks"]}
+    assert set(marks) == {(jamnagar, "rain"), (jamnagar, "wind"), (mumbai, "heat")}
+    rain = marks[(jamnagar, "rain")]
+    assert (rain["days"], rain["value"], rain["date"]) == (2, 120.5, "2026-09-23")   # worst day of the week
+    assert dates[rain["index"]] == "2026-09-25"                                      # the Friday that ends it
+    assert dates[marks[(mumbai, "heat")]["index"]] >= "2026-09-27"
+    assert view["through"] == "2026-09-29" and view["thresholds"]["rain_mm"] == 64.5
+
+    # Only forecast days from today on, and only the measures at or above a threshold.
+    assert view["forecast"]["dates"] == [today.isoformat(), (today + pd.Timedelta(days=1)).isoformat()]
+    assert view["forecast"]["flags"] == [{"site": jamnagar, "date": today.isoformat(), "kind": "wind", "value": 90.0}]
+
+    daily, daily_dates = weather("1y")
+    by_kind = {m["kind"]: m for m in daily["marks"] if m["site"] == jamnagar}
+    assert daily_dates[by_kind["wind"]["index"]] == "2026-09-23"
+    assert sum(m["days"] for m in daily["marks"] if m["site"] == jamnagar and m["kind"] == "rain") == 2
+
+
+def test_insights_weather_forecast_is_missing_when_the_service_is_down(offline, monkeypatch):
+    from app import insights
+
+    monkeypatch.setattr(insights, "get_history", lambda tickers: (synthetic_closes(), "live"))
+    monkeypatch.setattr(insights, "get_weather_history", lambda: {"through": "2026-09-29", "source": "t", "sites": {}})
+    monkeypatch.setattr(insights, "get_weather_outlook", lambda: None)
+    body = TestClient(app).post("/api/insights/portfolio", json={"holdings": HOLDING, "range": "1y"}).json()
+    assert body["weather"]["forecast"] is None and body["weather"]["marks"] == []
 
 
 def test_insights_weather_includes_daily_values_and_thresholds(monkeypatch):

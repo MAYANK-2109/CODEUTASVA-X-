@@ -2,43 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover } from '../lib/holdings'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-type Severity = 'critical' | 'warning' | 'info'
-
-interface Hedge {
-  action: 'hedge' | 'monitor' | 'none'
-  expected_loss: number
-  priced_in: number | null
-  instrument: string | null
-  notional: number | null
-  cost: number | null
-  confidence: string
-  drill: boolean
-}
-
-interface Alert {
-  id: string
-  severity: Severity
-  category: string
-  holding: string | null
-  title: string
-  detail: string
-  recommendation: string
-  basis: string
-  hedge: Hedge | null
-}
-
-interface AlertsResult {
-  alerts: Alert[]
-  portfolio_source: 'user' | 'sample'
-  prices_as_of: string | null
-  generated_at: string
-  unavailable: string[]
-  risk_model: { auc: number; tested_on: string; trained_on: string } | null
-}
+import { onOpenAlerts, publishAlerts } from '../lib/alerts'
+import type { AlertHedge as Hedge, AlertsResult, Severity } from '../lib/alerts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -117,6 +82,7 @@ const NotificationBell: React.FC = () => {
       const fresh: AlertsResult = await response.json()
       setResult(fresh)
       setFailed(false)
+      publishAlerts({ result: fresh, failed: false, loading: false })
 
       // Tell the browser about alerts it has not announced yet, if the user allowed it.
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -130,6 +96,7 @@ const NotificationBell: React.FC = () => {
     } catch {
       // Keep showing the last alerts; only flag that the refresh failed.
       setFailed(true)
+      publishAlerts({ failed: true, loading: false })
     } finally {
       setLoading(false)
     }
@@ -168,8 +135,7 @@ const NotificationBell: React.FC = () => {
     (a) => NEEDS_ATTENTION.includes(a.severity) && !a.hedge?.drill && !seen.includes(a.id),
   ).length
 
-  const toggle = () => {
-    const opening = !open
+  const show = (opening: boolean) => {
     setOpen(opening)
     if (opening && alerts.length) {
       const all = [...new Set([...seen, ...alerts.map((a) => a.id)])]
@@ -177,6 +143,13 @@ const NotificationBell: React.FC = () => {
       writeIds(seenKey, all)
     }
   }
+  const toggle = () => show(!open)
+  // The dashboard's risk overview can ask for the panel.
+  const showRef = useRef(show)
+  useEffect(() => {
+    showRef.current = show
+  })
+  useEffect(() => onOpenAlerts(() => showRef.current(true)), [])
 
   const enableBrowserNotifications = async () => {
     if (typeof Notification === 'undefined') return

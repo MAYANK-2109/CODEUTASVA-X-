@@ -30,6 +30,9 @@ app.include_router(chat_router)
 from app.insights import router as insights_router  # noqa: E402
 app.include_router(insights_router)
 
+from app.terminal import router as terminal_router  # noqa: E402
+app.include_router(terminal_router)
+
 from app.tools import vector_store  # noqa: E402
 vector_store.warm_up_in_background()
 

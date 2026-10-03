@@ -13,13 +13,14 @@ from app.risk import metrics
 from app.tools import sentiment as sentiment_tool
 from app.tools import vector_store
 from app.tools.events import tokenize
-from app.tools.market import NIFTY, get_history, get_macro
+from app.tools.market import CROSS_ASSETS, NIFTY, get_cross_assets, get_history, get_macro
 from app.tools.weather import (
     GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, get_weather_outlook, holdings_at, sites_named_in,
 )
 
 HORIZON_SESSIONS = 5
 MAX_EVENTS = 6
+MAX_FORECAST_HOLDINGS = 8
 
 UP = r"(?:up|spik\w*|surg\w*|ris\w*|rose|jump\w*|soar\w*|higher|shock|expensive|hik\w*|rais\w*|increas\w*|tighten\w*)"
 DOWN = r"(?:down|crash\w*|fall\w*|fell|drop\w*|plung\w*|slump\w*|lower|cheap\w*|cut\w*|reduc\w*|eas\w*)"
@@ -301,6 +302,29 @@ def _clean(value) -> float | None:
     return None if value is None or math.isnan(value) else float(value)
 
 
+def _cross_asset_moves(events: list[dict]) -> list[dict]:
+    """How crude, gas, gold and the rupee moved over each event window, each
+    measured on its own trading calendar. Empty without events or prices."""
+    closes = get_cross_assets() if events else None
+    if closes is None:
+        return []
+    moves = []
+    for ticker, label in CROSS_ASSETS.items():
+        if ticker not in closes.columns:
+            continue
+        series = closes[[ticker]].dropna()
+        seen = []
+        for event in events:
+            window = metrics.event_window_returns(series, event["date"], HORIZON_SESSIONS)
+            value = None if window is None else _clean(window[ticker])
+            if value is not None:
+                seen.append(value)
+        if seen:
+            moves.append({"ticker": ticker, "label": label, "mean": sum(seen) / len(seen),
+                          "min": min(seen), "max": max(seen), "n": len(seen)})
+    return moves
+
+
 @agent("historical")
 def historical(state: State) -> dict:
     tickers = [h["ticker"] for h in state["holdings"]]
@@ -347,6 +371,7 @@ def historical(state: State) -> dict:
             }
     nifty_mean = sum(e["nifty"] for e in events) / len(events) if events else None
 
+    event_rows = [r["id"] for r in rows]
     if per_holding:
         ranked = sorted(per_holding.items(), key=lambda kv: kv[1]["mean"])
         shown = ranked if len(ranked) <= 8 else ranked[:5] + ranked[-3:]
@@ -361,12 +386,29 @@ def historical(state: State) -> dict:
         )
 
     gaps = []
+    cross_assets, cross_row = _cross_asset_moves(events), None
+    if cross_assets:
+        rows.append(
+            evidence(
+                "H", len(rows) + 1,
+                f"Commodities and the rupee over the same {HORIZON_SESSIONS} sessions, averaged across these events: "
+                + "; ".join(f'{c["label"]} {pct(c["mean"])} (range {pct(c["min"])} to {pct(c["max"])}, n={c["n"]})'
+                            for c in cross_assets)
+                + ". A rise in USD/INR is a weaker rupee",
+                "Event study on Yahoo Finance futures and currency prices",
+            )
+        )
+        cross_row = rows[-1]["id"]
+    elif events:
+        gaps.append("Commodity and currency prices unavailable, so there is no commodity forecast")
     if source == "cache":
         gaps.append("Live prices unavailable; used the last saved price history")
     if not events:
         gaps.append("No comparable past events in the corpus for this question")
     return {
-        "findings": {"historical": {"events": events, "per_holding": per_holding, "nifty_mean": nifty_mean}},
+        "findings": {"historical": {"events": events, "per_holding": per_holding, "nifty_mean": nifty_mean,
+                                    "cross_assets": cross_assets, "cross_row": cross_row,
+                                    "event_rows": event_rows}},
         "evidence": rows,
         "gaps": gaps,
         "status": "done" if events else "degraded",
@@ -486,14 +528,19 @@ def risk(state: State) -> dict:
                      f"{HORIZON_SESSIONS}-session move of {pct(mean_move)} ({inr(mean_move * total)}); worst "
                      f"{pct(worst[0])} ({worst[1]}), best {pct(best[0])} ({best[1]})",
                      "Event study on current portfolio weights"))
-        drags = [c for c in contributions if c["pnl"] < 0][:3]
-        lifts = [c for c in reversed(contributions) if c["pnl"] > 0][:3]
-        if drags:
-            rows.append(evidence("R", len(rows) + 1, "Largest expected drags: " + "; ".join(
-                f'{c["name"]} {inr(c["pnl"])} ({pct(c["mean"])})' for c in drags), "Event study"))
-        if lifts:
-            rows.append(evidence("R", len(rows) + 1, "Largest expected offsets: " + "; ".join(
-                f'{c["name"]} {inr(c["pnl"])} ({pct(c["mean"])})' for c in lifts), "Event study"))
+        scenario["row"] = rows[-1]["id"]
+        if contributions:
+            # The biggest rupee effects in either direction; the rest are named as a count.
+            shown = sorted(contributions, key=lambda c: -abs(c["pnl"]))[:MAX_FORECAST_HOLDINGS]
+            shown.sort(key=lambda c: c["pnl"])
+            rest = len(contributions) - len(shown)
+            rows.append(evidence(
+                "R", len(rows) + 1,
+                f"Forecast per holding over {HORIZON_SESSIONS} sessions, from the average of these events: "
+                + "; ".join(f'{c["name"]} {pct(c["mean"])} ({inr(c["pnl"])})' for c in shown)
+                + (f". {rest} smaller holding(s) not listed" if rest else ""),
+                "Event study on current position values"))
+            scenario["forecast_row"] = rows[-1]["id"]
 
     return {
         "findings": {
@@ -626,6 +673,37 @@ def _ids(rows: list[dict], prefix: str) -> str:
     return f' [{", ".join(ids)}]' if ids else ""
 
 
+def _forecast_rows(state: State) -> list[str]:
+    """Evidence IDs of the per-holding and the commodity forecast, when they exist."""
+    scenario = (state["findings"].get("risk") or {}).get("scenario") or {}
+    history = state["findings"].get("historical") or {}
+    return [i for i in (scenario.get("forecast_row"), history.get("cross_row")) if i]
+
+
+def _forecast(state: State) -> dict | None:
+    """The forecast as data, for the chart beside the answer. Same figures as the evidence rows."""
+    scenario = (state["findings"].get("risk") or {}).get("scenario")
+    if not scenario:
+        return None
+    history = state["findings"].get("historical") or {}
+    per_holding = history.get("per_holding", {})
+    return {
+        "horizon_sessions": HORIZON_SESSIONS,
+        "events": scenario["n"],
+        "portfolio": {"mean": scenario["mean"], "pnl": round(scenario["pnl"]),
+                      "worst": scenario["worst"][0], "best": scenario["best"][0], "evidence": scenario["row"]},
+        "holdings": [
+            {"name": c["name"], "mean": c["mean"], "pnl": round(c["pnl"]), "n": per_holding[c["ticker"]]["n"],
+             "min": per_holding[c["ticker"]]["min"], "max": per_holding[c["ticker"]]["max"]}
+            for c in scenario["contributions"]
+        ],
+        "holdings_evidence": scenario.get("forecast_row"),
+        "cross_assets": [{k: c[k] for k in ("label", "mean", "min", "max", "n")}
+                         for c in history.get("cross_assets") or []],
+        "cross_assets_evidence": history.get("cross_row"),
+    }
+
+
 def _template(state: State, rows: list[dict]) -> str:
     findings = state["findings"]
     risk_view, hedge = findings.get("risk"), findings.get("hedging", {})
@@ -636,8 +714,9 @@ def _template(state: State, rows: list[dict]) -> str:
     scenario = risk_view and risk_view["scenario"]
     verdict = {"hedge": "A hedge is recommended.", "monitor": "No hedge is needed for now; monitor.",
                "no_hedge": "No hedge is recommended.", "none": "A hedge could not be sized."}[hedge.get("action", "none")]
+    forecast_ids = _forecast_rows(state)
     if scenario:
-        scenario_id = next(r["id"] for r in rows if "comparable events imply" in r["claim"])
+        scenario_id = scenario["row"]
         lines.append(
             f'**Bottom line:** in {scenario["n"]} comparable past events, a portfolio weighted like yours moved '
             f'{pct(scenario["mean"])} ({inr(scenario["pnl"])}) on average over {HORIZON_SESSIONS} sessions '
@@ -654,12 +733,22 @@ def _template(state: State, rows: list[dict]) -> str:
             lines.append(f"## {title}")
             lines.extend(f'- {r["claim"]} [{r["id"]}]' for r in picked)
 
-    section("Risk", "R", 8)
-    history = of("H")
+    if forecast_ids:
+        lines.append(f"## Forecast for the next {HORIZON_SESSIONS} sessions")
+        lines.extend(f"- {by_id[i]} [{i}]" for i in forecast_ids)
+
+    risk_rows = [r for r in of("R") if r["id"] not in forecast_ids][:8]
+    if risk_rows:
+        lines.append("## Risk")
+        lines.extend(f'- {r["claim"]} [{r["id"]}]' for r in risk_rows)
+    history = [r for r in of("H") if r["id"] not in forecast_ids]
+    event_ids = (findings.get("historical") or {}).get("event_rows", [])
+    events_used = [r for r in history if r["id"] in event_ids]
+    summary = [r for r in history if r["id"] not in event_ids]
     if history:
         lines.append("## Past events")
-        lines.append(f"- {history[-1]['claim']} [{history[-1]['id']}]")
-        lines.append(f"- Events used:{_ids(history[:-1], 'H')}")
+        lines.extend(f"- {r['claim']} [{r['id']}]" for r in summary)
+        lines.append(f"- Events used:{_ids(events_used, 'H')}")
     section("News sentiment", "S", 3)
     weather_macro_rows = of("W")[:3] + of("M")
     if weather_macro_rows:
@@ -671,13 +760,19 @@ def _template(state: State, rows: list[dict]) -> str:
 
 def _llm_answer(state: State, rows: list[dict], draft: str) -> str | None:
     listing = "\n".join(f'[{r["id"]}] {r["claim"]}' for r in rows)
+    forecast_ids = _forecast_rows(state)
     text = llm.complete(
         "You are the synthesiser of a portfolio risk assistant. Answer the user's question directly in "
-        "under 170 words, in plain language, for an investor.\n"
+        "under 200 words, in plain language, for an investor.\n"
         "Rules: use only facts from the evidence list. Copy every figure exactly as written there; do not "
         "round, convert or calculate new numbers. Put the supporting evidence ID in square brackets after "
         "each claim, like [R3]. Start with a line beginning '**Bottom line:**'. Then short '- ' bullets. "
-        "Say plainly if evidence is missing. No headings, no disclaimers.",
+        "Say plainly if evidence is missing. No headings, no disclaimers.\n"
+        + (f"The evidence holds a forecast in {' and '.join(forecast_ids)}. Whatever the hedge decision, "
+           "even when no hedge is needed, give one bullet starting 'Forecast for your holdings:' naming the "
+           "holdings expected to fall most and to rise most with their figures, and, if there is a commodity "
+           "row, one bullet starting 'Forecast for commodities:' with each commodity and the rupee. Then the "
+           "recommendation." if forecast_ids else ""),
         f'Question: {state["query"]}\n\nEvidence:\n{listing}\n\nDraft answer for reference:\n{draft}',
     )
     if not isinstance(text, str) or not text.strip():
@@ -686,6 +781,8 @@ def _llm_answer(state: State, rows: list[dict], draft: str) -> str | None:
     cited = set(re.findall(r"[A-Z]\d+", " ".join(CITATION.findall(text))))
     if ungrounded_numbers(text, rows) or not cited or not cited <= known:
         return None
+    if not set(forecast_ids) <= cited:
+        return None  # wording that leaves the forecast out is not used
     return text.strip()
 
 
@@ -713,6 +810,7 @@ def synthesiser(state: State) -> dict:
             "evidence": rows,
             "hedges": state["findings"].get("hedging", {}).get("hedges", []),
             "action": state["findings"].get("hedging", {}).get("action", "none"),
+            "forecast": _forecast(state),
             "gaps": gaps,
             "writer": "llm" if written else "template",
             "planner": state["plan"]["planner"],

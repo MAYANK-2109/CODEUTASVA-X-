@@ -24,6 +24,7 @@ PINECONE = "pinecone"
 LOCAL = "local"
 
 _lock = threading.Lock()
+_indexed_news: set[str] = set()
 _state: dict = {"index": None, "ready": False, "error": None, "events_indexed": 0,
                 "news_indexed": 0, "last_news_upsert_ms": None, "last_search_ms": None}
 
@@ -121,15 +122,19 @@ def search_events(query: str, event_type: str | None = None, limit: int = 6) -> 
 
 
 def _upsert_news(items: list[dict]) -> None:
-    records = [
-        {
-            "_id": hashlib.sha1((item.get("url") or item["title"]).encode()).hexdigest(),
-            TEXT_FIELD: item["title"],
-            "source": item.get("source") or "",
-            "published_at": item.get("published_at") or "",
-        }
-        for item in items
-    ]
+    records = {}
+    for item in items:
+        record_id = hashlib.sha1((item.get("url") or item["title"]).encode()).hexdigest()
+        if record_id not in _indexed_news:  # a headline seen before is already in the index
+            records[record_id] = {
+                "_id": record_id,
+                TEXT_FIELD: item["title"],
+                "source": item.get("source") or "",
+                "published_at": item.get("published_at") or "",
+            }
+    records = list(records.values())
+    if not records:
+        return
     try:
         started = time.perf_counter()
         for start in range(0, len(records), UPSERT_BATCH):
@@ -140,6 +145,7 @@ def _upsert_news(items: list[dict]) -> None:
             )
         _state["last_news_upsert_ms"] = round((time.perf_counter() - started) * 1000)
         _state["news_indexed"] += len(records)
+        _indexed_news.update(record["_id"] for record in records)
     except Exception as exc:
         _state["error"] = f"{type(exc).__name__}: {exc}"
 
