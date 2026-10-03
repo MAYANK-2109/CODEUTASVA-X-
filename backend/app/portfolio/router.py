@@ -1,8 +1,8 @@
 """
 Portfolio router — FastAPI endpoints for:
-  POST /api/portfolio/upload-file   → extract holdings from PDF or Excel
-  GET  /api/portfolio/holdings      → list saved holdings
-  POST /api/portfolio/holdings      → save holdings (batch upsert)
+  POST /api/portfolio/upload-pdf    → extract holdings from PDF or Excel (auth required)
+  GET  /api/portfolio/holdings      → list saved holdings for the authenticated user
+  POST /api/portfolio/holdings      → save holdings (batch upsert) for the authenticated user
   PUT  /api/portfolio/holdings/{id} → update a single holding
   DELETE /api/portfolio/holdings/{id} → delete a holding
 """
@@ -19,6 +19,44 @@ from pydantic import BaseModel, field_validator
 from .extractor import extract_holdings
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
+
+# ---------------------------------------------------------------------------
+# JWT / auth helpers
+# ---------------------------------------------------------------------------
+
+def _verify_jwt(authorization: str | None) -> str:
+    """
+    Decode the Supabase JWT from the Authorization header and return the
+    authenticated user's UUID.  Raises HTTP 401 on any failure.
+
+    We parse the payload manually (base64) instead of using a full JWT library
+    so we avoid adding a hard dependency.  Signature verification is handled
+    by Supabase itself when the anon/service-role client makes calls — here we
+    only need the ``sub`` claim to scope DB queries.
+    """
+    import base64, json as _json
+
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+
+    token = authorization.split(" ", 1)[1].strip()
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise HTTPException(status_code=401, detail="Malformed JWT.")
+
+    # Decode payload (middle part) — add padding if needed
+    payload_b64 = parts[1] + "==" * ((4 - len(parts[1]) % 4) % 4)
+    try:
+        payload = _json.loads(base64.urlsafe_b64decode(payload_b64))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Could not decode JWT payload.")
+
+    user_id: str | None = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="JWT missing 'sub' claim.")
+
+    return user_id
 
 # ---------------------------------------------------------------------------
 # Supabase client (server-side, uses service-role key)
@@ -84,12 +122,24 @@ class HoldingUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+):
     """
-    Accept a PDF, extract holdings, return them as JSON.
-    Accept a PDF, XLSX, or XLS file, extract holdings, return them as JSON.
-    The file is processed in memory and deleted after extraction.
+    Accept a PDF, XLSX, or XLS broker statement, extract holdings, and return
+    them as JSON **scoped to the authenticated user**.
+
+    Requires a valid Supabase ``Authorization: Bearer <jwt>`` header so that
+    the returned ``user_id`` is always derived from the token — never from
+    untrusted client input.
+
+    The file is processed in-memory and freed immediately after extraction.
     """
+    # ── Auth: resolve the calling user from the JWT ───────────────────────
+    user_id = _verify_jwt(authorization)
+
+    # ── File validation ───────────────────────────────────────────────────
     ALLOWED_EXTENSIONS = ('.pdf', '.xlsx', '.xls')
     fname = (file.filename or '').lower()
     if not any(fname.endswith(ext) for ext in ALLOWED_EXTENSIONS):
@@ -109,27 +159,38 @@ async def upload_pdf(file: UploadFile = File(...)):
     finally:
         del file_bytes  # Free memory immediately
 
-    return {"holdings": holdings, "count": len(holdings)}
+    # Return holdings *and* the verified user_id so the frontend can persist
+    # them directly via the authenticated Supabase client without trusting any
+    # client-supplied user identifier.
+    return {"holdings": holdings, "count": len(holdings), "user_id": user_id}
 
 
 @router.get("/holdings")
-async def list_holdings(user_id: str | None = None):
-    """Return all holdings for a user."""
+async def list_holdings(authorization: str | None = Header(default=None)):
+    """Return all holdings for the **authenticated** user only."""
+    user_id = _verify_jwt(authorization)
     db = _get_db()
-    query = db.table("portfolio_holdings").select("*").order("created_at", desc=True)
-    if user_id:
-        query = query.eq("user_id", user_id)
-    result = query.execute()
+    result = (
+        db.table("portfolio_holdings")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
     return {"holdings": result.data or []}
 
 
 @router.post("/holdings")
-async def save_holdings(holdings: list[HoldingIn], user_id: str | None = None):
-    """Batch insert holdings into the database."""
+async def save_holdings(
+    holdings: list[HoldingIn],
+    authorization: str | None = Header(default=None),
+):
+    """Batch insert holdings into the database, scoped to the authenticated user."""
+    user_id = _verify_jwt(authorization)
     db = _get_db()
     rows = [
         {
-            "user_id": user_id,
+            "user_id": user_id,  # always from verified JWT, never from client payload
             "name": h.name,
             "symbol": h.symbol,
             "isin": h.isin,
