@@ -4,6 +4,7 @@ model files are present, otherwise the VADER lexicon with finance terms.
 Fetch the model with:  uv run python -m app.tools.sentiment --download
 """
 
+import json
 import os
 import sys
 import threading
@@ -36,6 +37,7 @@ FINANCE_TERMS = {
 }
 POSITIVE_CUTOFF = 0.05
 NEGATIVE_CUTOFF = -0.05
+EVAL_FILE = MODEL_DIR.parent.parent / "trained" / "sentiment_eval.json"
 
 _vader = SentimentIntensityAnalyzer()
 _vader.lexicon.update(FINANCE_TERMS)
@@ -98,6 +100,17 @@ def _finbert_scores(texts: list[str]) -> list[float]:
     return [float(p[POSITIVE] - p[NEGATIVE]) for p in probs]
 
 
+def cutoffs() -> tuple[float, float]:
+    """(positive, negative) score cut-offs for the scorer in use. They come from
+    the calibration in data/trained/sentiment_eval.json when it exists."""
+    key = "finbert" if backend() == FINBERT else "vader"
+    try:
+        calibrated = json.loads(EVAL_FILE.read_text())[key]
+        return calibrated["positive_cutoff"], calibrated["negative_cutoff"]
+    except (OSError, ValueError, KeyError):
+        return POSITIVE_CUTOFF, NEGATIVE_CUTOFF
+
+
 def score_many(texts: list[str]) -> list[float]:
     """Sentiment per text in [-1, 1]: P(positive) - P(negative) for FinBERT,
     the compound score for VADER."""
@@ -122,11 +135,12 @@ def score_headlines(items: list[dict]) -> dict | None:
     values = score_many([item["title"] for item in items])
     scored = [{**item, "score": round(value, 2)} for item, value in zip(items, values)]
     scores = [s["score"] for s in scored]
+    positive_cutoff, negative_cutoff = cutoffs()
     return {
         "mean": round(sum(scores) / len(scores), 2),
         "count": len(scores),
-        "positive": sum(s >= POSITIVE_CUTOFF for s in scores),
-        "negative": sum(s <= NEGATIVE_CUTOFF for s in scores),
+        "positive": sum(s >= positive_cutoff for s in scores),
+        "negative": sum(s <= negative_cutoff for s in scores),
         "items": sorted(scored, key=lambda s: s["score"]),
     }
 

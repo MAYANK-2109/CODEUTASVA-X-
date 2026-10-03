@@ -108,6 +108,8 @@ def get_weather_outlook() -> list[dict] | None:
         outlook.append(
             {
                 "name": place["name"],
+                "lat": place["lat"],
+                "lon": place["lon"],
                 "relevance": place["relevance"],
                 "sectors": place["sectors"],
                 "regions": place["regions"],

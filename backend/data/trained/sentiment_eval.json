@@ -1,0 +1,26 @@
+{
+  "dataset": "Financial PhraseBank, 4,846 sentences labelled by annotators (Kaggle: ankurzing)",
+  "split": "Cut-offs chosen on 2423 sentences, accuracy measured on the other 2423",
+  "always_neutral_accuracy": 0.593,
+  "vader": {
+    "positive_cutoff": 0.44,
+    "negative_cutoff": -0.44,
+    "holdout_accuracy": 0.612,
+    "holdout_recall_by_class": {
+      "positive": 0.444,
+      "neutral": 0.809,
+      "negative": 0.077
+    }
+  },
+  "finbert": {
+    "positive_cutoff": 0.32,
+    "negative_cutoff": -0.32,
+    "holdout_accuracy": 0.873,
+    "holdout_recall_by_class": {
+      "positive": 0.853,
+      "neutral": 0.885,
+      "negative": 0.858
+    },
+    "note": "FinBERT was originally trained on this same dataset, so its accuracy here is optimistic for unseen headlines"
+  }
+}

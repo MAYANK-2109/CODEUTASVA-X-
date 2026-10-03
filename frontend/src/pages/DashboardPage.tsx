@@ -4,6 +4,7 @@ import Sidebar from '../components/Sidebar'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
+import NotificationBell from '../components/NotificationBell'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -140,13 +141,6 @@ const IconSearch = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8" />
     <line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-)
-
-const IconBell = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </svg>
 )
 
@@ -510,15 +504,8 @@ const DashboardPage: React.FC = () => {
               <IconRefresh spinning={portfolioLoading || newsLoading} />
             </button>
 
-            {/* Notifications */}
-            <button
-              id="dashboard-notifications-btn"
-              className="relative w-9 h-9 rounded-xl border border-groww-border-light flex items-center justify-center text-groww-text-secondary hover:text-groww-green hover:bg-groww-green-light/40 transition-all duration-200"
-              aria-label="Notifications"
-            >
-              <IconBell />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-groww-green" />
-            </button>
+            {/* Notifications: live alerts on the user's holdings */}
+            <NotificationBell />
 
             {/* User Profile Avatar */}
             <button

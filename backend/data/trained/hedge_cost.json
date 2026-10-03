@@ -1,0 +1,22 @@
+{
+  "india_vix": {
+    "latest": 14.46,
+    "as_of": "2026-10-01",
+    "median_5y": 14.11,
+    "percentile_5y": 55
+  },
+  "us_vix": {
+    "latest": 16.39,
+    "as_of": "2026-10-01",
+    "median_5y": 17.7,
+    "percentile_5y": 37,
+    "source": "FRED VIXCLS"
+  },
+  "implied_over_realised": {
+    "median": 1.31,
+    "share_of_days_implied_was_higher": 0.814,
+    "days": 2428,
+    "meaning": "Above 1 means options priced in more volatility than the Nifty then delivered."
+  },
+  "put_cost_method": "Black-Scholes at-the-money put, India VIX as volatility, zero interest rate, 5 sessions to expiry. An estimate, not a quote."
+}

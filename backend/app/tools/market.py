@@ -15,7 +15,8 @@ SAMPLE_PORTFOLIO = DATA_DIR / "portfolio.json"
 
 NIFTY = "^NSEI"
 HISTORY_START = "2013-01-01"
-HISTORY_TTL_SECONDS = 6 * 3600
+# Short enough that an alert on today's move is not hours stale.
+HISTORY_TTL_SECONDS = 15 * 60
 MACRO_TTL_SECONDS = 600
 
 MACRO_SERIES = {

@@ -172,7 +172,7 @@ def sentiment(state: State) -> dict:
             )
         )
     worst = topic["items"][0] if topic else None
-    if worst and worst["score"] <= sentiment_tool.NEGATIVE_CUTOFF:
+    if worst and worst["score"] <= sentiment_tool.cutoffs()[1]:
         rows.append(
             evidence(
                 "S", len(rows) + 1,

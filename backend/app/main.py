@@ -33,6 +33,9 @@ app.include_router(insights_router)
 from app.tools import vector_store  # noqa: E402
 vector_store.warm_up_in_background()
 
+from app.tools import gdelt  # noqa: E402
+gdelt.start_background_scan()
+
 
 @app.get("/health")
 def health() -> dict[str, str]:

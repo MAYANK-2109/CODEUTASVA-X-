@@ -1,0 +1,65 @@
+{
+  "trained_on": "2026-10-04",
+  "data": "Daily closes of 59 NSE stocks from Yahoo Finance (live)",
+  "definition": "Sudden move: a daily return, beyond what the stock's beta to the Nifty explains, of at least 2.0 standard deviations of its last 60 sessions. The model estimates the chance of one in the next 5 sessions.",
+  "features": [
+    "today",
+    "recent_peak",
+    "recent_shocks",
+    "vol_regime",
+    "market_today",
+    "trend_gap"
+  ],
+  "mean": {
+    "today": 0.759924,
+    "recent_peak": 1.603091,
+    "recent_shocks": 1.150379,
+    "vol_regime": 0.976538,
+    "market_today": 0.791812,
+    "trend_gap": 0.52491
+  },
+  "std": {
+    "today": 0.729242,
+    "recent_peak": 0.958627,
+    "recent_shocks": 1.253805,
+    "vol_regime": 0.194741,
+    "market_today": 0.730454,
+    "trend_gap": 0.41601
+  },
+  "intercept": -1.23052,
+  "weights": {
+    "today": 0.071392,
+    "recent_peak": 0.087374,
+    "recent_shocks": 0.072504,
+    "vol_regime": -0.366007,
+    "market_today": 0.140786,
+    "trend_gap": 0.121029
+  },
+  "elevated_cutoff": 0.3405,
+  "train": {
+    "days": 109610,
+    "period": "2015-01-15 to 2022-12-30",
+    "base_rate": 0.236
+  },
+  "test": {
+    "days": 54232,
+    "period": "2023-01-02 to 2026-09-24",
+    "base_rate": 0.24,
+    "auc": 0.605,
+    "rate_when_elevated": 0.358,
+    "elevated_days": 5388,
+    "rate_when_calm": 0.184,
+    "calm_days": 26950
+  },
+  "after_a_sudden_move": {
+    "note": "Direction is not predictable: a model trained to predict continuation scored AUC 0.50.",
+    "drops": {
+      "cases": 1189,
+      "kept_falling": 0.484
+    },
+    "jumps": {
+      "cases": 1884,
+      "kept_rising": 0.511
+    }
+  }
+}

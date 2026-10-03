@@ -1,0 +1,498 @@
+{
+  "dataset": "NOAA IBTrACS v04r01, North Indian Ocean; prices from Yahoo Finance",
+  "definition": "A storm counts once it is within 50 km of the Indian coast at 34 kt or more. A company is exposed if it has a mapped asset within 300 km. Moves are returns beyond the company's beta to the Nifty over 5 sessions from that day.",
+  "storms": 30,
+  "period": "2014-10-12 to 2026-09-23",
+  "exposed": {
+    "cases": 191,
+    "mean": 0.007,
+    "median": 0.0024,
+    "worst_tenth": -0.0392,
+    "share_negative": 0.44
+  },
+  "not_exposed": {
+    "cases": 768,
+    "mean": 0.0082,
+    "median": 0.0029,
+    "worst_tenth": -0.0389,
+    "share_negative": 0.458
+  },
+  "exposed_minus_not_exposed_t": -0.35,
+  "exposed_severe_storms_64kt": {
+    "cases": 99,
+    "mean": 0.0015,
+    "median": -0.0047,
+    "worst_tenth": -0.0461,
+    "share_negative": 0.545
+  },
+  "exposed_three_sessions_before": {
+    "cases": 191,
+    "mean": 0.0025,
+    "median": -0.0003,
+    "worst_tenth": -0.0289,
+    "share_negative": 0.503
+  },
+  "library": [
+    {
+      "name": "Hudhud",
+      "date": "2014-10-12",
+      "lat": 17.6,
+      "lon": 83.4,
+      "wind_kt": 115,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0167,
+        "HINDPETRO": -0.0167,
+        "NTPC": 0.0069
+      }
+    },
+    {
+      "name": "Nada",
+      "date": "2016-12-01",
+      "lat": 10.8,
+      "lon": 80.1,
+      "wind_kt": 45,
+      "exposed_moves": {
+        "ASHOKLEY": -0.0162,
+        "EICHERMOT": 0.0953,
+        "INDIGO": -0.0028,
+        "INFY": 0.0024,
+        "IOC": 0.0059,
+        "NLCINDIA": 0.0143,
+        "NTPC": 0.0127,
+        "TCS": -0.044
+      }
+    },
+    {
+      "name": "Vardah",
+      "date": "2016-12-12",
+      "lat": 13.2,
+      "lon": 80.3,
+      "wind_kt": 85,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0042,
+        "ASHOKLEY": -0.0059,
+        "EICHERMOT": -0.033,
+        "INDIGO": -0.0112,
+        "INFY": 0.0279,
+        "IOC": -0.0056,
+        "NLCINDIA": -0.022,
+        "NTPC": -0.0124,
+        "TCS": 0.0501
+      }
+    },
+    {
+      "name": "Daye",
+      "date": "2018-09-20",
+      "lat": 19.1,
+      "lon": 85.2,
+      "wind_kt": 35,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0739,
+        "HINDPETRO": 0.0201,
+        "IOC": 0.0188,
+        "NTPC": 0.0098,
+        "TATASTEEL": 0.0244
+      }
+    },
+    {
+      "name": "Titli",
+      "date": "2018-10-10",
+      "lat": 18.6,
+      "lon": 84.6,
+      "wind_kt": 105,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0113,
+        "HINDPETRO": 0.1894,
+        "IOC": 0.0663,
+        "NTPC": -0.0053,
+        "TATASTEEL": -0.0406
+      }
+    },
+    {
+      "name": "Gaja",
+      "date": "2018-11-15",
+      "lat": 10.6,
+      "lon": 80.3,
+      "wind_kt": 80,
+      "exposed_moves": {
+        "ASHOKLEY": 0.0334,
+        "EICHERMOT": 0.0395,
+        "INDIGO": -0.0036,
+        "INFY": -0.0541,
+        "IOC": -0.029,
+        "NLCINDIA": -0.0064,
+        "NTPC": -0.0631,
+        "TCS": -0.0372
+      }
+    },
+    {
+      "name": "Phethai",
+      "date": "2018-12-17",
+      "lat": 16.5,
+      "lon": 82.3,
+      "wind_kt": 55,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0133,
+        "HINDPETRO": 0.1027,
+        "NTPC": 0.0512
+      }
+    },
+    {
+      "name": "Fani",
+      "date": "2019-05-03",
+      "lat": 19.6,
+      "lon": 85.7,
+      "wind_kt": 150,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0322,
+        "IOC": 0.0009,
+        "NTPC": -0.0173,
+        "TATASTEEL": -0.0176
+      }
+    },
+    {
+      "name": "Vayu",
+      "date": "2019-06-17",
+      "lat": 23.1,
+      "lon": 68.3,
+      "wind_kt": 40,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0472,
+        "ADANIPOWER": 0.0107,
+        "RELIANCE": -0.0169,
+        "TATAPOWER": 0.0151
+      }
+    },
+    {
+      "name": "Bulbul:Matmo",
+      "date": "2019-11-09",
+      "lat": 21.2,
+      "lon": 88.1,
+      "wind_kt": 100,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0513,
+        "CESC": -0.0045,
+        "COALINDIA": -0.0422,
+        "INDIGO": -0.0441,
+        "IOC": -0.0077,
+        "ITC": -0.0364,
+        "TATASTEEL": 0.0337
+      }
+    },
+    {
+      "name": "Amphan",
+      "date": "2020-05-20",
+      "lat": 21.4,
+      "lon": 88.1,
+      "wind_kt": 110,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0217,
+        "CESC": -0.0703,
+        "COALINDIA": 0.0271,
+        "INDIGO": 0.0106,
+        "IOC": 0.0405,
+        "ITC": 0.0875,
+        "TATASTEEL": 0.0023
+      }
+    },
+    {
+      "name": "Nisarga",
+      "date": "2020-06-03",
+      "lat": 18.1,
+      "lon": 72.9,
+      "wind_kt": 85,
+      "exposed_moves": {
+        "BPCL": 0.1071,
+        "HDFCBANK": -0.0197,
+        "HINDPETRO": 0.0852,
+        "ICICIBANK": -0.0077,
+        "INDIGO": 0.1408,
+        "JSWENERGY": 0.0393,
+        "JSWSTEEL": -0.0195,
+        "ONGC": 0.0604,
+        "SBIN": 0.0754,
+        "TATAPOWER": 0.0003
+      }
+    },
+    {
+      "name": "Nivar",
+      "date": "2020-11-25",
+      "lat": 12.0,
+      "lon": 80.4,
+      "wind_kt": 70,
+      "exposed_moves": {
+        "ADANIPORTS": 0.1081,
+        "ASHOKLEY": 0.0187,
+        "EICHERMOT": -0.0648,
+        "INDIGO": -0.04,
+        "INFY": -0.0025,
+        "IOC": 0.0233,
+        "NLCINDIA": 0.0376,
+        "NTPC": 0.0039,
+        "TCS": 0.007
+      }
+    },
+    {
+      "name": "Burevi",
+      "date": "2020-12-03",
+      "lat": 9.4,
+      "lon": 79.4,
+      "wind_kt": 45,
+      "exposed_moves": {
+        "NLCINDIA": 0.0264
+      }
+    },
+    {
+      "name": "Tauktae",
+      "date": "2021-05-17",
+      "lat": 20.5,
+      "lon": 71.3,
+      "wind_kt": 120,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0116,
+        "BPCL": 0.0082,
+        "HDFCBANK": 0.0355,
+        "HINDPETRO": 0.0557,
+        "ICICIBANK": 0.0179,
+        "INDIGO": -0.0375,
+        "IOC": 0.0008,
+        "JSWSTEEL": -0.0513,
+        "NTPC": -0.0131,
+        "ONGC": -0.0323,
+        "RELIANCE": 0.0024,
+        "SBIN": 0.0574,
+        "TATAPOWER": -0.0091,
+        "TORNTPOWER": 0.033
+      }
+    },
+    {
+      "name": "Yaas",
+      "date": "2021-05-26",
+      "lat": 21.1,
+      "lon": 87.2,
+      "wind_kt": 75,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0195,
+        "CESC": -0.0189,
+        "COALINDIA": -0.0202,
+        "INDIGO": -0.0096,
+        "IOC": -0.0259,
+        "ITC": 0.0055,
+        "NTPC": -0.0459,
+        "TATASTEEL": -0.0322
+      }
+    },
+    {
+      "name": "Gulab:Shaheen-Gu",
+      "date": "2021-09-26",
+      "lat": 18.4,
+      "lon": 84.6,
+      "wind_kt": 45,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0085,
+        "HINDPETRO": 0.0979,
+        "IOC": 0.0995,
+        "NTPC": 0.1352
+      }
+    },
+    {
+      "name": "Unnamed",
+      "date": "2021-11-11",
+      "lat": 12.9,
+      "lon": 80.4,
+      "wind_kt": 40,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0058,
+        "ASHOKLEY": -0.0077,
+        "EICHERMOT": -0.0201,
+        "INDIGO": 0.0967,
+        "INFY": 0.0321,
+        "IOC": -0.0398,
+        "NLCINDIA": 0.0147,
+        "NTPC": -0.0015,
+        "TCS": 0.0152
+      }
+    },
+    {
+      "name": "Asani",
+      "date": "2022-05-11",
+      "lat": 15.9,
+      "lon": 81.6,
+      "wind_kt": 65,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0325,
+        "HINDPETRO": -0.0565,
+        "NTPC": -0.0329
+      }
+    },
+    {
+      "name": "Unnamed",
+      "date": "2022-08-19",
+      "lat": 21.2,
+      "lon": 88.9,
+      "wind_kt": 45,
+      "exposed_moves": {
+        "ADANIPORTS": 0.016,
+        "CESC": 0.0021,
+        "COALINDIA": 0.0371,
+        "INDIGO": 0.008,
+        "IOC": 0.0019,
+        "ITC": 0.0074
+      }
+    },
+    {
+      "name": "Mandous",
+      "date": "2022-12-09",
+      "lat": 12.6,
+      "lon": 80.4,
+      "wind_kt": 55,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0042,
+        "ASHOKLEY": 0.0064,
+        "EICHERMOT": 0.0046,
+        "INDIGO": 0.0112,
+        "INFY": -0.0384,
+        "IOC": 0.0249,
+        "NLCINDIA": -0.0243,
+        "NTPC": 0.0169,
+        "TCS": -0.0039
+      }
+    },
+    {
+      "name": "Biparjoy",
+      "date": "2023-06-15",
+      "lat": 23.1,
+      "lon": 68.4,
+      "wind_kt": 70,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0044,
+        "ADANIPOWER": -0.0234,
+        "RELIANCE": -0.0012,
+        "TATAPOWER": -0.0047
+      }
+    },
+    {
+      "name": "Unnamed",
+      "date": "2023-08-01",
+      "lat": 22.8,
+      "lon": 88.8,
+      "wind_kt": 40,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0317,
+        "CESC": 0.0054,
+        "COALINDIA": 0.0231,
+        "INDIGO": -0.0175,
+        "IOC": -0.0052,
+        "ITC": -0.0185,
+        "NTPC": 0.0047,
+        "TATAPOWER": -0.0074
+      }
+    },
+    {
+      "name": "Michaung",
+      "date": "2023-12-04",
+      "lat": 13.7,
+      "lon": 80.7,
+      "wind_kt": 58,
+      "exposed_moves": {
+        "ADANIPORTS": 0.1541,
+        "ASHOKLEY": -0.0351,
+        "EICHERMOT": 0.0094,
+        "INDIGO": 0.0258,
+        "INFY": -0.0169,
+        "IOC": 0.0418,
+        "NLCINDIA": 0.0141,
+        "NTPC": 0.0314,
+        "TCS": 0.001
+      }
+    },
+    {
+      "name": "Remal",
+      "date": "2024-05-26",
+      "lat": 21.5,
+      "lon": 89.0,
+      "wind_kt": 60,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0426,
+        "CESC": 0.043,
+        "COALINDIA": 0.0051,
+        "INDIGO": 0.0021,
+        "IOC": -0.0123,
+        "ITC": -0.0084
+      }
+    },
+    {
+      "name": "Dana",
+      "date": "2024-10-24",
+      "lat": 20.5,
+      "lon": 87.1,
+      "wind_kt": 65,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0494,
+        "CESC": -0.0189,
+        "COALINDIA": -0.0467,
+        "INDIGO": -0.1004,
+        "IOC": -0.0573,
+        "ITC": 0.0258,
+        "NTPC": 0.0072,
+        "TATASTEEL": 0.0073
+      }
+    },
+    {
+      "name": "Fengal",
+      "date": "2024-11-30",
+      "lat": 12.3,
+      "lon": 80.5,
+      "wind_kt": 45,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0114,
+        "ASHOKLEY": -0.029,
+        "EICHERMOT": -0.0106,
+        "INDIGO": 0.0003,
+        "INFY": 0.0182,
+        "IOC": -0.0111,
+        "NLCINDIA": -0.0074,
+        "NTPC": -0.0186,
+        "TCS": 0.0262
+      }
+    },
+    {
+      "name": "Unnamed",
+      "date": "2025-10-02",
+      "lat": 19.1,
+      "lon": 84.9,
+      "wind_kt": 35,
+      "exposed_moves": {
+        "ADANIPORTS": -0.0392,
+        "HINDPETRO": 0.0373,
+        "IOC": 0.0221,
+        "NTPC": -0.0278,
+        "TATASTEEL": 0.0342
+      }
+    },
+    {
+      "name": "Montha",
+      "date": "2025-10-28",
+      "lat": 16.0,
+      "lon": 81.8,
+      "wind_kt": 50,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0281,
+        "HINDPETRO": 0.0741,
+        "NTPC": -0.0105
+      }
+    },
+    {
+      "name": "Unnamed",
+      "date": "2026-09-23",
+      "lat": 17.8,
+      "lon": 84.0,
+      "wind_kt": 45,
+      "exposed_moves": {
+        "ADANIPORTS": 0.0518,
+        "HINDPETRO": 0.0103,
+        "NTPC": 0.0007
+      }
+    }
+  ]
+}

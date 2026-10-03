@@ -1,0 +1,815 @@
+{
+  "dataset": "WRI Global Power Plant Database v1.3.0",
+  "india_plants_in_database": 1589,
+  "matched_to_listed_owner": 94,
+  "matched_mw": 95120,
+  "note": "Owners are matched by station name; the database's owner field is empty for most large Indian stations. Capacity is as of the database's last update (2021).",
+  "by_owner": {
+    "ADANIPOWER": {
+      "plants": 4,
+      "mw": 10440
+    },
+    "CESC": {
+      "plants": 3,
+      "mw": 1125
+    },
+    "JINDALSTEL": {
+      "plants": 1,
+      "mw": 2400
+    },
+    "JSWENERGY": {
+      "plants": 6,
+      "mw": 4440
+    },
+    "LT": {
+      "plants": 1,
+      "mw": 1400
+    },
+    "NHPC": {
+      "plants": 21,
+      "mw": 6140
+    },
+    "NLCINDIA": {
+      "plants": 9,
+      "mw": 4380
+    },
+    "NTPC": {
+      "plants": 30,
+      "mw": 46160
+    },
+    "RPOWER": {
+      "plants": 2,
+      "mw": 5160
+    },
+    "SJVN": {
+      "plants": 2,
+      "mw": 1912
+    },
+    "TATAPOWER": {
+      "plants": 12,
+      "mw": 7235
+    },
+    "TORNTPOWER": {
+      "plants": 2,
+      "mw": 2348
+    },
+    "VEDL": {
+      "plants": 1,
+      "mw": 1980
+    }
+  },
+  "plants": [
+    {
+      "ticker": "NTPC",
+      "name": "Vindh_Chal Stps power station",
+      "lat": 24.098,
+      "lon": 82.672,
+      "kind": "coal power",
+      "mw": 4760
+    },
+    {
+      "ticker": "ADANIPOWER",
+      "name": "Mundra Tpp power station",
+      "lat": 22.823,
+      "lon": 69.553,
+      "kind": "coal power",
+      "mw": 4620
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Mundra Umpp power station",
+      "lat": 22.816,
+      "lon": 69.528,
+      "kind": "coal power",
+      "mw": 4000
+    },
+    {
+      "ticker": "RPOWER",
+      "name": "Sasan Umpp power station",
+      "lat": 23.978,
+      "lon": 82.627,
+      "kind": "coal power",
+      "mw": 3960
+    },
+    {
+      "ticker": "ADANIPOWER",
+      "name": "Tirora Tpp power station",
+      "lat": 21.413,
+      "lon": 79.967,
+      "kind": "coal power",
+      "mw": 3300
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Talcher Stps power station",
+      "lat": 21.097,
+      "lon": 85.074,
+      "kind": "coal power",
+      "mw": 3000
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Rihand power station",
+      "lat": 24.027,
+      "lon": 82.791,
+      "kind": "coal power",
+      "mw": 3000
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Sipat Stps power station",
+      "lat": 22.13,
+      "lon": 82.293,
+      "kind": "coal power",
+      "mw": 2980
+    },
+    {
+      "ticker": "NTPC",
+      "name": "R_Gundem Stps power station",
+      "lat": 18.757,
+      "lon": 79.456,
+      "kind": "coal power",
+      "mw": 2600
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Korba Stps power station",
+      "lat": 22.388,
+      "lon": 82.686,
+      "kind": "coal power",
+      "mw": 2600
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Kudgi power station",
+      "lat": 16.499,
+      "lon": 75.835,
+      "kind": "coal power",
+      "mw": 2400
+    },
+    {
+      "ticker": "JINDALSTEL",
+      "name": "Tamnar Tpp power station",
+      "lat": 22.099,
+      "lon": 83.451,
+      "kind": "coal power",
+      "mw": 2400
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Kahalgaon power station",
+      "lat": 25.235,
+      "lon": 87.263,
+      "kind": "coal power",
+      "mw": 2340
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Mouda Stps power station",
+      "lat": 21.18,
+      "lon": 79.398,
+      "kind": "coal power",
+      "mw": 2320
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Farakka Stps power station",
+      "lat": 24.772,
+      "lon": 87.894,
+      "kind": "coal power",
+      "mw": 2100
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Simhadri power station",
+      "lat": 17.591,
+      "lon": 83.092,
+      "kind": "coal power",
+      "mw": 2000
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Singrauli Stps power station",
+      "lat": 24.103,
+      "lon": 82.707,
+      "kind": "coal power",
+      "mw": 2000
+    },
+    {
+      "ticker": "VEDL",
+      "name": "Talwandi Sabo power station",
+      "lat": 29.924,
+      "lon": 75.237,
+      "kind": "coal power",
+      "mw": 1980
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Dadri (Nctpp) power station",
+      "lat": 28.603,
+      "lon": 77.608,
+      "kind": "coal power",
+      "mw": 1820
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Unchahar power station",
+      "lat": 25.913,
+      "lon": 81.327,
+      "kind": "coal power",
+      "mw": 1550
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Vallur Ntpc/Ntecl power station",
+      "lat": 13.237,
+      "lon": 80.302,
+      "kind": "coal power",
+      "mw": 1500
+    },
+    {
+      "ticker": "SJVN",
+      "name": "Nathpa Jhakri power station",
+      "lat": 31.564,
+      "lon": 77.98,
+      "kind": "hydro power",
+      "mw": 1500
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Indra Gandhi Stpp power station",
+      "lat": 28.485,
+      "lon": 76.375,
+      "kind": "coal power",
+      "mw": 1500
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli St Ii power station",
+      "lat": 11.558,
+      "lon": 79.442,
+      "kind": "coal power",
+      "mw": 1470
+    },
+    {
+      "ticker": "LT",
+      "name": "Rajpura Tpp power station",
+      "lat": 30.557,
+      "lon": 76.577,
+      "kind": "coal power",
+      "mw": 1400
+    },
+    {
+      "ticker": "ADANIPOWER",
+      "name": "Kawai Tpp power station",
+      "lat": 24.777,
+      "lon": 76.737,
+      "kind": "coal power",
+      "mw": 1320
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Barh Stpp Ii power station",
+      "lat": 25.486,
+      "lon": 85.745,
+      "kind": "coal power",
+      "mw": 1320
+    },
+    {
+      "ticker": "ADANIPOWER",
+      "name": "Udupi Tpp power station",
+      "lat": 13.16,
+      "lon": 74.8,
+      "kind": "coal power",
+      "mw": 1200
+    },
+    {
+      "ticker": "RPOWER",
+      "name": "Rosa Tpp Ph - 1 power station",
+      "lat": 27.818,
+      "lon": 79.936,
+      "kind": "coal power",
+      "mw": 1200
+    },
+    {
+      "ticker": "TORNTPOWER",
+      "name": "Dgen Mega Cccp power station",
+      "lat": 21.692,
+      "lon": 72.621,
+      "kind": "gas power",
+      "mw": 1200
+    },
+    {
+      "ticker": "JSWENERGY",
+      "name": "Jsw Ratnagiri Tpp power station",
+      "lat": 17.297,
+      "lon": 73.212,
+      "kind": "coal power",
+      "mw": 1200
+    },
+    {
+      "ticker": "TORNTPOWER",
+      "name": "Sugen Cccp power station",
+      "lat": 21.34,
+      "lon": 72.989,
+      "kind": "gas power",
+      "mw": 1148
+    },
+    {
+      "ticker": "JSWENERGY",
+      "name": "Jallippa Kapurdi Tpp power station",
+      "lat": 25.889,
+      "lon": 71.324,
+      "kind": "coal power",
+      "mw": 1080
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Maithon Rb Tpp power station",
+      "lat": 23.821,
+      "lon": 86.76,
+      "kind": "coal power",
+      "mw": 1050
+    },
+    {
+      "ticker": "JSWENERGY",
+      "name": "Karcham Wangtoo power station",
+      "lat": 31.516,
+      "lon": 78.107,
+      "kind": "hydro power",
+      "mw": 1000
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Tuticorin Jv power station",
+      "lat": 8.76,
+      "lon": 78.17,
+      "kind": "coal power",
+      "mw": 1000
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Indira Sagar power station",
+      "lat": 22.279,
+      "lon": 76.473,
+      "kind": "hydro power",
+      "mw": 1000
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Dadri Gt power station",
+      "lat": 28.593,
+      "lon": 77.61,
+      "kind": "gas power",
+      "mw": 830
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Lara power station",
+      "lat": 21.757,
+      "lon": 83.457,
+      "kind": "coal power",
+      "mw": 800
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Gadarwara power station",
+      "lat": 22.862,
+      "lon": 78.865,
+      "kind": "coal power",
+      "mw": 800
+    },
+    {
+      "ticker": "CESC",
+      "name": "Budge Budge power station",
+      "lat": 22.467,
+      "lon": 88.14,
+      "kind": "coal power",
+      "mw": 750
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Bongaigaon Tpp power station",
+      "lat": 26.515,
+      "lon": 90.529,
+      "kind": "coal power",
+      "mw": 750
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Trombay_Coal power station",
+      "lat": 19.0,
+      "lon": 72.898,
+      "kind": "coal power",
+      "mw": 750
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Badarpur power station",
+      "lat": 28.506,
+      "lon": 77.307,
+      "kind": "coal power",
+      "mw": 705
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Salal I & Ii power station",
+      "lat": 33.142,
+      "lon": 74.81,
+      "kind": "hydro power",
+      "mw": 690
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Auraiya Gt power station",
+      "lat": 26.628,
+      "lon": 79.529,
+      "kind": "gas power",
+      "mw": 652
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Kawas Gt power station",
+      "lat": 21.175,
+      "lon": 72.688,
+      "kind": "gas power",
+      "mw": 645
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli St I power station",
+      "lat": 11.589,
+      "lon": 79.47,
+      "kind": "coal power",
+      "mw": 600
+    },
+    {
+      "ticker": "JSWENERGY",
+      "name": "Torangallu Ext power station",
+      "lat": 15.184,
+      "lon": 76.662,
+      "kind": "coal power",
+      "mw": 600
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Chamera-I power station",
+      "lat": 32.597,
+      "lon": 75.986,
+      "kind": "hydro power",
+      "mw": 540
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Omkareshwar power station",
+      "lat": 22.242,
+      "lon": 76.162,
+      "kind": "hydro power",
+      "mw": 520
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Parbati-Iii power station",
+      "lat": 31.74,
+      "lon": 77.258,
+      "kind": "hydro power",
+      "mw": 520
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Trombay power station",
+      "lat": 19.0,
+      "lon": 72.898,
+      "kind": "oil power",
+      "mw": 500
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli Tps Exp -Ii power station",
+      "lat": 11.553,
+      "lon": 79.441,
+      "kind": "coal power",
+      "mw": 500
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Uri power station",
+      "lat": 34.144,
+      "lon": 74.186,
+      "kind": "hydro power",
+      "mw": 480
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Tanda power station",
+      "lat": 26.586,
+      "lon": 82.602,
+      "kind": "coal power",
+      "mw": 440
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli Fst Ext power station",
+      "lat": 11.589,
+      "lon": 79.461,
+      "kind": "coal power",
+      "mw": 420
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Anta Gt power station",
+      "lat": 25.18,
+      "lon": 76.319,
+      "kind": "gas power",
+      "mw": 419
+    },
+    {
+      "ticker": "SJVN",
+      "name": "Rampur power station",
+      "lat": 31.4,
+      "lon": 77.593,
+      "kind": "hydro power",
+      "mw": 412
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Dulhasti power station",
+      "lat": 33.369,
+      "lon": 75.799,
+      "kind": "hydro power",
+      "mw": 390
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Rihand_Hydro power station",
+      "lat": 24.178,
+      "lon": 83.036,
+      "kind": "hydro power",
+      "mw": 300
+    },
+    {
+      "ticker": "JSWENERGY",
+      "name": "Baspa power station",
+      "lat": 31.431,
+      "lon": 78.241,
+      "kind": "hydro power",
+      "mw": 300
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Bhira power station",
+      "lat": 18.455,
+      "lon": 73.391,
+      "kind": "hydro power",
+      "mw": 300
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Chamera Ii power station",
+      "lat": 32.473,
+      "lon": 76.255,
+      "kind": "hydro power",
+      "mw": 300
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Dhauli Ganga power station",
+      "lat": 29.878,
+      "lon": 80.573,
+      "kind": "hydro power",
+      "mw": 280
+    },
+    {
+      "ticker": "JSWENERGY",
+      "name": "Torangallu Imp power station",
+      "lat": 15.184,
+      "lon": 76.662,
+      "kind": "coal power",
+      "mw": 260
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli Tps(Z) power station",
+      "lat": 11.54,
+      "lon": 79.416,
+      "kind": "coal power",
+      "mw": 250
+    },
+    {
+      "ticker": "CESC",
+      "name": "Titagarh power station",
+      "lat": 22.732,
+      "lon": 88.371,
+      "kind": "coal power",
+      "mw": 240
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Uri -Ii power station",
+      "lat": 34.092,
+      "lon": 74.032,
+      "kind": "hydro power",
+      "mw": 240
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Chamera-Iii power station",
+      "lat": 32.473,
+      "lon": 76.44,
+      "kind": "hydro power",
+      "mw": 231
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Baira Siul power station",
+      "lat": 32.806,
+      "lon": 76.142,
+      "kind": "hydro power",
+      "mw": 180
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Trombay Gt power station",
+      "lat": 19.002,
+      "lon": 72.897,
+      "kind": "gas power",
+      "mw": 180
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Teesta Low Dam -Iv power station",
+      "lat": 26.928,
+      "lon": 88.456,
+      "kind": "hydro power",
+      "mw": 160
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Trombay_Oil power station",
+      "lat": 19.0,
+      "lon": 72.898,
+      "kind": "oil power",
+      "mw": 150
+    },
+    {
+      "ticker": "CESC",
+      "name": "Southern Repl. power station",
+      "lat": 22.549,
+      "lon": 88.293,
+      "kind": "coal power",
+      "mw": 135
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Teesta Low Dam-Iii power station",
+      "lat": 27.002,
+      "lon": 88.443,
+      "kind": "hydro power",
+      "mw": 132
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Sewa-Ii power station",
+      "lat": 32.676,
+      "lon": 75.822,
+      "kind": "hydro power",
+      "mw": 120
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Loktak power station",
+      "lat": 24.587,
+      "lon": 93.67,
+      "kind": "hydro power",
+      "mw": 105
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Tanakpur power station",
+      "lat": 29.006,
+      "lon": 80.095,
+      "kind": "hydro power",
+      "mw": 94
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Bhira Tail Race power station",
+      "lat": 18.443,
+      "lon": 73.35,
+      "kind": "hydro power",
+      "mw": 80
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Bhivpuri power station",
+      "lat": 18.937,
+      "lon": 73.453,
+      "kind": "hydro power",
+      "mw": 75
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Khopoli power station",
+      "lat": 18.782,
+      "lon": 73.356,
+      "kind": "hydro power",
+      "mw": 72
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli Nlc1 power station",
+      "lat": 11.623,
+      "lon": 79.532,
+      "kind": "solar power",
+      "mw": 65
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli Nlc2 power station",
+      "lat": 11.63,
+      "lon": 79.494,
+      "kind": "solar power",
+      "mw": 65
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Rangit-Iii power station",
+      "lat": 27.295,
+      "lon": 88.292,
+      "kind": "hydro power",
+      "mw": 60
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Khopoli Works power station",
+      "lat": 18.771,
+      "lon": 73.259,
+      "kind": "coal power",
+      "mw": 60
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Nimoo Bazgo power station",
+      "lat": 34.215,
+      "lon": 77.184,
+      "kind": "hydro power",
+      "mw": 45
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Chutak power station",
+      "lat": 34.49,
+      "lon": 76.114,
+      "kind": "hydro power",
+      "mw": 44
+    },
+    {
+      "ticker": "TATAPOWER",
+      "name": "Trombay Works power station",
+      "lat": 19.037,
+      "lon": 72.889,
+      "kind": "gas power",
+      "mw": 18
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Dadri Iscc power station",
+      "lat": 28.591,
+      "lon": 77.61,
+      "kind": "solar power",
+      "mw": 14
+    },
+    {
+      "ticker": "NLCINDIA",
+      "name": "Neyveli power station",
+      "lat": 11.611,
+      "lon": 79.52,
+      "kind": "solar power",
+      "mw": 10
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Unchahar power station",
+      "lat": 25.889,
+      "lon": 81.315,
+      "kind": "solar power",
+      "mw": 10
+    },
+    {
+      "ticker": "NHPC",
+      "name": "Sewa-Iii power station",
+      "lat": 32.603,
+      "lon": 75.901,
+      "kind": "hydro power",
+      "mw": 9
+    },
+    {
+      "ticker": "NTPC",
+      "name": "Dadri Solar Power Plant power station",
+      "lat": 28.579,
+      "lon": 77.631,
+      "kind": "solar power",
+      "mw": 5
+    }
+  ]
+}
