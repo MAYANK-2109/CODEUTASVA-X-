@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import ChatWidget from './components/ChatWidget'
+import Sidebar from './components/Sidebar'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import PortfolioPage from './pages/PortfolioPage'
@@ -28,7 +30,12 @@ function App() {
             path="/portfolio"
             element={
               <ProtectedRoute>
-                <PortfolioPage />
+                <div className="flex h-screen overflow-hidden bg-groww-bg-primary">
+                  <Sidebar />
+                  <main className="flex-1 overflow-y-auto overflow-x-hidden">
+                    <PortfolioPage />
+                  </main>
+                </div>
               </ProtectedRoute>
             }
           />
@@ -47,6 +54,7 @@ function App() {
           {/* Catch-all → dashboard */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        <ChatWidget />
       </AuthProvider>
     </BrowserRouter>
   )

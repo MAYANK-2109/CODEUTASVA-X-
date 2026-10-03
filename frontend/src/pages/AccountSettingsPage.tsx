@@ -3,7 +3,6 @@ import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
 
 const AccountSettingsPage: React.FC = () => {
-  const [activeTab, _setActiveTab] = useState('user');
   const [isEditing, setIsEditing] = useState(false);
 
   const { user, signOut } = useAuth();

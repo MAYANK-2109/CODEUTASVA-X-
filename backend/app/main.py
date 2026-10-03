@@ -24,6 +24,12 @@ app.include_router(portfolio_router)
 
 app.include_router(router)
 
+from app.chat import router as chat_router  # noqa: E402
+app.include_router(chat_router)
+
+from app.tools import vector_store  # noqa: E402
+vector_store.warm_up_in_background()
+
 
 @app.get("/health")
 def health() -> dict[str, str]:

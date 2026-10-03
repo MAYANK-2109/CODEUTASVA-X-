@@ -7,7 +7,7 @@ import httpx
 FEED_URL = "https://news.google.com/rss/search"
 CACHE_TTL_SECONDS = 300
 
-_cache: dict[str, object] = {"key": None, "at": 0.0, "value": None}
+_cache: dict[str, tuple[float, list]] = {}
 
 
 def parse_feed(xml_text: str, limit: int) -> list[dict[str, str | None]]:
@@ -39,8 +39,9 @@ def parse_feed(xml_text: str, limit: int) -> list[dict[str, str | None]]:
 def get_news(query: str, limit: int = 8) -> list[dict[str, str | None]]:
     """Recent headlines for the query, newest first. Empty list if the feed is down."""
     key = f"{query}|{limit}"
-    if _cache["key"] == key and time.time() - _cache["at"] < CACHE_TTL_SECONDS:
-        return _cache["value"]
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_TTL_SECONDS:
+        return hit[1]
     try:
         response = httpx.get(
             FEED_URL,
@@ -52,5 +53,5 @@ def get_news(query: str, limit: int = 8) -> list[dict[str, str | None]]:
         items = parse_feed(response.text, limit)
     except (httpx.HTTPError, ET.ParseError):
         return []
-    _cache.update(key=key, at=time.time(), value=items)
+    _cache[key] = (time.time(), items)
     return items

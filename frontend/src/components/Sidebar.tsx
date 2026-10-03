@@ -24,16 +24,6 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    id: 'explore',
-    label: 'Explore',
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="8"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-      </svg>
-    ),
-  },
-  {
     id: 'portfolio',
     label: 'Portfolio',
     path: '/portfolio',
@@ -69,12 +59,7 @@ const navItems: NavItem[] = [
   },
 ]
 
-interface SidebarProps {
-  activePage?: string
-  onNavigate?: (page: string) => void
-}
-
-const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate }) => {
+const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -85,6 +70,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate 
 
   const selectItem = (item: NavItem) => {
     setActiveItem(item.id)
+    if (item.path) navigate(item.path)
   }
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? 'U'
