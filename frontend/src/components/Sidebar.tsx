@@ -93,10 +93,55 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage: _activePage = 'dashboard'
   const userEmail = user?.email ?? 'user@example.com'
   const userName = userEmail.split('@')[0]
 
+  const tabClass = (active: boolean) =>
+    `flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors duration-150 ${
+      active ? 'text-groww-green' : 'text-groww-text-secondary'
+    }`
+
   return (
+    <>
+    {/* ── Mobile: bottom tab bar ──────────────────────────────── */}
+    <nav
+      id="mobile-nav"
+      aria-label="Main navigation"
+      className="md:hidden shrink-0 flex items-stretch bg-white border-t border-groww-border-light"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)', boxShadow: '0 -2px 12px rgba(0, 0, 0, 0.04)' }}
+    >
+      {navItems.map((item) => {
+        const active = pathname !== '/settings' && activeItem === item.id
+        return (
+          <button
+            key={item.id}
+            id={`mobile-nav-${item.id}`}
+            onClick={() => selectItem(item)}
+            aria-current={active ? 'page' : undefined}
+            className={tabClass(active)}
+          >
+            {item.icon}
+            <span className="truncate max-w-full px-1">{item.label}</span>
+          </button>
+        )
+      })}
+      <button
+        id="mobile-nav-account"
+        onClick={() => navigate('/settings')}
+        aria-current={pathname === '/settings' ? 'page' : undefined}
+        className={tabClass(pathname === '/settings')}
+      >
+        <span
+          className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
+          style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)' }}
+        >
+          {userInitial}
+        </span>
+        <span className="truncate max-w-full px-1">Account</span>
+      </button>
+    </nav>
+
+    {/* ── Desktop: left sidebar ───────────────────────────────── */}
     <aside
       id="sidebar"
-      className="relative flex flex-col h-screen bg-groww-bg-sidebar border-r border-groww-border-light transition-all duration-300 ease-in-out shrink-0"
+      className="relative hidden md:flex flex-col h-full bg-groww-bg-sidebar border-r border-groww-border-light transition-all duration-300 ease-in-out shrink-0"
       style={{
         width: collapsed ? '72px' : '240px',
         boxShadow: '2px 0 20px rgba(0, 179, 134, 0.05)',
@@ -284,6 +329,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage: _activePage = 'dashboard'
         </svg>
       </button>
     </aside>
+    </>
   )
 }
 

@@ -387,17 +387,17 @@ const DashboardPage: React.FC = () => {
   }, [news, newsSearch, newsFilter])
 
   return (
-    <div id="dashboard-layout" className="flex h-screen overflow-hidden bg-groww-bg-primary font-inter">
+    <div id="dashboard-layout" className="flex flex-col-reverse md:flex-row h-dvh overflow-hidden bg-groww-bg-primary font-inter">
       {/* ── Left Sidebar ──────────────────────────────────────────────────── */}
       <Sidebar activePage="dashboard" />
 
       {/* ── Main Content Area ─────────────────────────────────────────────── */}
-      <main id="dashboard-main" className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col">
+      <main id="dashboard-main" className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col">
         {/* Top Header Bar */}
         <header
           id="dashboard-header"
-          className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-groww-border-light px-6 py-3.5 flex items-center justify-between"
-          style={{ minHeight: '68px' }}
+          className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-groww-border-light px-4 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between gap-3"
+          style={{ minHeight: '60px' }}
         >
           {/* Header Left: Page Title & Date */}
           <div className="flex items-center gap-4">
@@ -421,7 +421,7 @@ const DashboardPage: React.FC = () => {
           </div>
 
           {/* Header Right: Status & Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Quick Live Index Ticker */}
             <div className="hidden md:flex items-center gap-3 px-3 py-1.5 rounded-xl bg-groww-bg-primary border border-groww-border-light text-xs font-medium">
               <span className="text-groww-text-secondary font-semibold">NIFTY 50</span>

@@ -88,12 +88,12 @@ const AccountSettingsPage: React.FC = () => {
   const readonlyClass = "w-full px-3 py-2.5 text-sm font-medium";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-groww-bg-primary">
+    <div className="flex flex-col-reverse md:flex-row h-dvh overflow-hidden bg-groww-bg-primary">
       {/* Left Sidebar */}
       <Sidebar />
 
       {/* Main content area */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
         <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto w-full">
           <h1 className="text-xl sm:text-2xl font-bold text-groww-text-primary mb-4 sm:mb-6">Account Settings</h1>
 

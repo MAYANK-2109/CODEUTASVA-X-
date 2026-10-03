@@ -205,7 +205,7 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
   return (
     <div
       id="upload-modal-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
       style={{ background: 'rgba(15,15,35,0.65)', backdropFilter: 'blur(6px)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
@@ -338,7 +338,7 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
 
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[640px] text-sm">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200">
                         {['Name *', 'Symbol', 'Type', 'Buy Date', 'Units', 'Buy Price', 'Live Price', ''].map(h => (
@@ -549,8 +549,8 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
       {/* Header */}
       <header
         id="portfolio-header"
-        className="sticky top-0 z-10 bg-white border-b border-groww-border-light px-6 py-4 flex items-center justify-between"
-        style={{ minHeight: '72px' }}
+        className="sticky top-0 z-10 bg-white border-b border-groww-border-light px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3"
+        style={{ minHeight: '60px' }}
       >
         <div>
           <h1 className="text-lg font-bold text-groww-text-primary">Portfolio</h1>
@@ -561,7 +561,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
         <button
           id="add-pdf-btn"
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+          className="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
           style={{ background: 'linear-gradient(135deg, #00B386 0%, #007A5A 100%)', boxShadow: '0 4px 14px rgba(0,179,134,0.3)' }}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -574,7 +574,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
         </button>
       </header>
 
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-4 sm:p-6">
         {error && <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">{error}</div>}
 
         {/* Summary Cards */}
@@ -652,7 +652,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
         ) : (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[720px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">Stock</th>

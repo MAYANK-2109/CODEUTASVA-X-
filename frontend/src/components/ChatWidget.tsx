@@ -400,7 +400,7 @@ const ChatWidget: React.FC = () => {
         <section
           id="chat-panel"
           aria-label="Portfolio assistant"
-          className="fixed z-50 bottom-24 right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[440px] h-[min(640px,calc(100vh-8rem))] flex flex-col rounded-2xl bg-groww-bg-primary border border-groww-border shadow-2xl overflow-hidden"
+          className="fixed z-50 inset-0 sm:inset-auto sm:bottom-40 md:bottom-24 sm:right-6 sm:w-[440px] sm:h-[min(640px,calc(100dvh-12rem))] md:h-[min(640px,calc(100dvh-8rem))] flex flex-col sm:rounded-2xl bg-groww-bg-primary sm:border border-groww-border shadow-2xl overflow-hidden"
         >
           <header
             className="flex items-center justify-between px-4 py-3 text-white"
@@ -460,6 +460,7 @@ const ChatWidget: React.FC = () => {
               send(input)
             }}
             className="flex items-center gap-2 p-3 bg-white border-t border-groww-border-light"
+            style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
           >
             <input
               id="chat-input"
@@ -467,7 +468,7 @@ const ChatWidget: React.FC = () => {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about a risk to your portfolio…"
               maxLength={1000}
-              className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-groww-border text-sm outline-none focus:border-groww-green"
+              className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-groww-border text-base sm:text-sm outline-none focus:border-groww-green"
             />
             <button
               type="submit"
@@ -489,7 +490,7 @@ const ChatWidget: React.FC = () => {
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close assistant' : 'Open assistant'}
         aria-expanded={open}
-        className="fixed z-50 bottom-6 right-4 sm:right-6 w-14 h-14 rounded-full text-white flex items-center justify-center shadow-lg transition-transform duration-200 hover:scale-105"
+        className={`fixed z-50 bottom-20 md:bottom-6 right-4 sm:right-6 w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white items-center justify-center shadow-lg transition-transform duration-200 hover:scale-105 ${open ? 'hidden sm:flex' : 'flex'}`}
         style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)' }}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

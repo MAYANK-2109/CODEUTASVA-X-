@@ -30,9 +30,9 @@ function App() {
             path="/portfolio"
             element={
               <ProtectedRoute>
-                <div className="flex h-screen overflow-hidden bg-groww-bg-primary">
+                <div className="flex flex-col-reverse md:flex-row h-dvh overflow-hidden bg-groww-bg-primary">
                   <Sidebar />
-                  <main className="flex-1 overflow-y-auto overflow-x-hidden">
+                  <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
                     <PortfolioPage />
                   </main>
                 </div>
