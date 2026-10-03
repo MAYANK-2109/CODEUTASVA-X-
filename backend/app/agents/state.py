@@ -41,4 +41,7 @@ def inr(amount: float) -> str:
 
 
 def pct(fraction: float, signed: bool = True) -> str:
-    return f"{fraction * 100:+.1f}%" if signed else f"{fraction * 100:.1f}%"
+    value = round(fraction * 100, 1)
+    if value == 0:
+        return "0.0%"  # never "-0.0%"
+    return f"{value:+.1f}%" if signed else f"{value:.1f}%"

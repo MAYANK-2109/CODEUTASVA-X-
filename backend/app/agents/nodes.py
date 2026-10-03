@@ -420,6 +420,19 @@ def risk(state: State) -> dict:
         rows.append(evidence("R", len(rows) + 1, f"Portfolio beta to Nifty 50: {portfolio_beta:.2f}",
                              f"Daily returns, last {len(returns)} sessions"))
 
+    # Per-holding risk, so "which holding is riskiest" has evidence behind it.
+    volatility = {t: float(returns[t].std()) * math.sqrt(metrics.TRADING_DAYS_1Y)
+                  for t in weights if returns[t].notna().sum() >= 60}
+    if volatility:
+        riskiest = sorted(positions, key=lambda p: -volatility.get(p["ticker"], 0))[:5]
+        rows.append(evidence(
+            "R", len(rows) + 1,
+            "Riskiest holdings by 1-year annualised volatility: " + "; ".join(
+                f'{p["name"]} {pct(volatility[p["ticker"]], signed=False)}'
+                + (f' (beta {betas[p["ticker"]]:.2f})' if p["ticker"] in betas else "")
+                for p in riskiest if p["ticker"] in volatility),
+            f"Daily returns, last {len(returns)} sessions"))
+
     history = state["findings"].get("historical", {})
     scenario = None
     event_moves = []
@@ -620,7 +633,7 @@ def _template(state: State, rows: list[dict]) -> str:
             lines.append(f"## {title}")
             lines.extend(f'- {r["claim"]} [{r["id"]}]' for r in picked)
 
-    section("Risk", "R", 6)
+    section("Risk", "R", 8)
     history = of("H")
     if history:
         lines.append("## Past events")

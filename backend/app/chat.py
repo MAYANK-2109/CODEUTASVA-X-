@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.agents import llm
 from app.agents.graph import run
 from app.tools import vector_store
 
@@ -28,6 +29,12 @@ def _stream(request: ChatRequest) -> Iterator[str]:
 def vector_status() -> dict:
     """Which search backend is live, and the latest embed-and-index timings."""
     return vector_store.status()
+
+
+@router.get("/llm/status")
+def llm_status() -> dict:
+    """Whether the LLM is configured, which model answered, and the last failure if any."""
+    return llm.status()
 
 
 @router.post("/chat")

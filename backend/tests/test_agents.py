@@ -1,12 +1,13 @@
 import json
 import re
 
+import httpx
 import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agents import graph, nodes
+from app.agents import graph, llm, nodes
 from app.agents.state import inr
 from app.main import app
 from app.risk import metrics
@@ -35,8 +36,9 @@ def synthetic_closes(event_drop: float = 0.0, market_drop: float = 0.0) -> pd.Da
 @pytest.fixture
 def offline(monkeypatch):
     """Replace every network tool with fixed data."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.delenv("PINECONE_API_KEY", raising=False)
     monkeypatch.setattr(nodes, "get_news", lambda query, limit=8: [
         {"title": "Refiners slump as storm halts shipments", "source": "Wire", "url": "u1", "published_at": None},
@@ -262,3 +264,93 @@ def test_evidence_names_the_search_backend(offline, pinecone_ready):
 def test_vector_status_reports_local_backend_without_a_key(offline):
     body = TestClient(app).get("/api/vector/status").json()
     assert body["backend"] == "local" and body["configured"] is False
+
+
+class FakeResponse:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code, self._payload, self.text = status_code, payload or {}, json.dumps(payload or {})
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("error", request=None, response=self)
+
+
+def gemini_reply(text, finish="STOP"):
+    return FakeResponse(payload={"candidates": [{"finishReason": finish, "content": {"parts": [{"text": text}]}}]})
+
+
+@pytest.fixture
+def gemini(monkeypatch):
+    """Fake the Gemini HTTP API; returns the list of requests made."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setitem(llm._state, "model", None)
+    monkeypatch.setattr(llm, "RETRY_DELAYS_SECONDS", (0,))
+    requests = []
+
+    def install(replies):
+        queue = list(replies)
+
+        def post(url, json=None, headers=None, timeout=None):
+            requests.append({"url": url, "body": json, "headers": headers})
+            return queue.pop(0)
+
+        monkeypatch.setattr(llm.httpx, "post", post)
+        return requests
+
+    return install
+
+
+def test_gemini_text_reply_and_key_stays_out_of_the_url(gemini):
+    requests = gemini([gemini_reply("All good.")])
+    assert llm.complete("system", "user") == "All good."
+    assert "test-key" not in requests[0]["url"]
+    assert requests[0]["headers"]["x-goog-api-key"] == "test-key"
+    assert requests[0]["body"]["system_instruction"]["parts"][0]["text"] == "system"
+
+
+def test_gemini_structured_reply_uses_converted_schema(gemini):
+    requests = gemini([gemini_reply('{"event_type": "cyclone", "news_query": "cyclone gujarat"}')])
+    result = llm.complete("system", "user", nodes.PLAN_SCHEMA)
+    assert result == {"event_type": "cyclone", "news_query": "cyclone gujarat"}
+    schema = requests[0]["body"]["generationConfig"]["responseSchema"]
+    assert schema["type"] == "OBJECT" and "additionalProperties" not in schema
+    assert schema["properties"]["event_type"]["type"] == "STRING"
+
+
+def test_gemini_failures_return_none(gemini):
+    gemini([FakeResponse(429, {"error": "quota"})] * 6
+           + [gemini_reply("", finish="SAFETY"), gemini_reply("not json")])
+    assert llm.complete("s", "u") is None
+    assert llm.complete("s", "u") is None
+    assert llm.complete("s", "u", nodes.PLAN_SCHEMA) is None
+    assert llm.status()["last_error"]
+
+
+def test_gemini_falls_back_to_the_next_model(gemini):
+    busy = FakeResponse(503, {"error": "overloaded"})
+    requests = gemini([busy, busy, gemini_reply("ok")])
+    assert llm.complete("s", "u") == "ok"
+    assert requests[0]["url"].endswith(f"/models/{llm.DEFAULT_MODELS[0]}:generateContent")
+    assert requests[2]["url"].endswith(f"/models/{llm.DEFAULT_MODELS[1]}:generateContent")
+    assert llm.status()["model"] == llm.DEFAULT_MODELS[1]
+
+
+def test_pipeline_uses_llm_plan_and_grounded_llm_wording(offline, gemini):
+    offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
+    monkeypatch_text = "**Bottom line:** a hedge is recommended [G1].\n- Your portfolio beta is shown in the evidence [R4]."
+    gemini([plan, gemini_reply(monkeypatch_text)])
+    answer = answer_for("Big storm coming, what should I do with my shares?", HOLDING)
+    assert answer["planner"] == "llm" and answer["writer"] == "llm"
+    assert answer["text"] == monkeypatch_text
+    assert answer["action"] == "hedge"
+
+
+def test_gemini_retries_when_the_model_is_overloaded(gemini):
+    requests = gemini([FakeResponse(503, {"error": "overloaded"}), gemini_reply("ok")])
+    assert llm.complete("s", "u") == "ok"
+    assert len(requests) == 2
