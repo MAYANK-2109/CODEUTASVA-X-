@@ -139,9 +139,6 @@ def supervisor(state: State) -> dict:
 
 # --------------------------------------------------------------------------- sentiment
 
-NEWS_SOURCE = "Google News RSS, scored with VADER + finance lexicon"
-
-
 @agent("sentiment")
 def sentiment(state: State) -> dict:
     keywords = state["plan"]["news_query"]
@@ -169,7 +166,7 @@ def sentiment(state: State) -> dict:
                 "S", len(rows) + 1,
                 f'{scope}: mean sentiment {result["mean"]:+.2f} ({sentiment_tool.label(result["mean"])}) '
                 f'across {result["count"]} headlines, {result["negative"]} negative and {result["positive"]} positive',
-                NEWS_SOURCE,
+                sentiment_tool.source_label(),
             )
         )
     worst = topic["items"][0] if topic else None
@@ -188,7 +185,8 @@ def sentiment(state: State) -> dict:
         "evidence": rows,
         "gaps": gaps,
         "status": "done" if primary else "degraded",
-        "summary": f'Sentiment {sentiment_tool.label(primary["mean"])} ({primary["mean"]:+.2f}, {primary["count"]} headlines)'
+        "summary": f'{sentiment_tool.backend()} sentiment {sentiment_tool.label(primary["mean"])} '
+        f'({primary["mean"]:+.2f}, {primary["count"]} headlines)'
         if primary else "News feed unavailable",
     }
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.agents import llm
 from app.agents.graph import run
-from app.tools import vector_store
+from app.tools import sentiment, vector_store
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -29,6 +29,12 @@ def _stream(request: ChatRequest) -> Iterator[str]:
 def vector_status() -> dict:
     """Which search backend is live, and the latest embed-and-index timings."""
     return vector_store.status()
+
+
+@router.get("/sentiment/status")
+def sentiment_status() -> dict:
+    """Which sentiment model is scoring headlines."""
+    return sentiment.status()
 
 
 @router.get("/llm/status")

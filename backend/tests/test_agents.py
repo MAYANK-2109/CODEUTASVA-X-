@@ -12,6 +12,7 @@ from app.agents.state import inr
 from app.main import app
 from app.risk import metrics
 from app.tools.events import find_similar_events, load_events
+from app.tools import sentiment as sentiment_tool
 from app.tools import vector_store
 from app.tools.market import NIFTY, normalise_holdings
 
@@ -40,6 +41,7 @@ def offline(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     monkeypatch.delenv("PINECONE_API_KEY", raising=False)
+    monkeypatch.setenv("SENTIMENT_MODEL", "vader")
     monkeypatch.setattr(nodes, "get_news", lambda query, limit=8: [
         {"title": "Refiners slump as storm halts shipments", "source": "Wire", "url": "u1", "published_at": None},
         {"title": "Ports reopen after cyclone passes", "source": "Wire", "url": "u2", "published_at": None},
@@ -354,3 +356,25 @@ def test_gemini_retries_when_the_model_is_overloaded(gemini):
     requests = gemini([FakeResponse(503, {"error": "overloaded"}), gemini_reply("ok")])
     assert llm.complete("s", "u") == "ok"
     assert len(requests) == 2
+
+
+def test_sentiment_falls_back_to_vader_when_forced(monkeypatch):
+    monkeypatch.setenv("SENTIMENT_MODEL", "vader")
+    assert sentiment_tool.backend() == sentiment_tool.VADER
+    assert sentiment_tool.score("Shares plunge after fraud probe") < 0
+    assert "VADER" in sentiment_tool.source_label()
+
+
+@pytest.mark.skipif(not sentiment_tool.MODEL_FILE.exists(), reason="FinBERT model not downloaded")
+def test_finbert_scores_financial_headlines(monkeypatch):
+    monkeypatch.delenv("SENTIMENT_MODEL", raising=False)
+    assert sentiment_tool.backend() == sentiment_tool.FINBERT
+    good, bad, flat, missed_by_lexicon = sentiment_tool.score_many([
+        "Refiner posts record profit and raises dividend",
+        "Cyclone forces shutdown of Gujarat ports, oil shipments halted",
+        "Company to hold annual general meeting on Friday",
+        "ONGC output falls for third straight quarter",
+    ])
+    assert good > 0.5 and bad < -0.5 and abs(flat) < 0.3
+    # No negative word a lexicon would catch, but clearly bad news for the company.
+    assert missed_by_lexicon < -0.5

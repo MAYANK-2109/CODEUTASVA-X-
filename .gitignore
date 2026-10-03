@@ -56,3 +56,4 @@ __pycache__/
 backend/.env
 backend/data/cache/
 backend/data/chroma/
+backend/data/models/
