@@ -75,7 +75,7 @@ interface SidebarProps {
   onAddPdf?: () => void
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate, onAddPdf }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activePage: _activePage = 'dashboard', onNavigate: _onNavigate, onAddPdf }) => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
