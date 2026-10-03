@@ -69,7 +69,12 @@ const navItems: NavItem[] = [
   },
 ]
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  activePage?: string
+  onNavigate?: (page: string) => void
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate }) => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -80,7 +85,6 @@ const Sidebar: React.FC = () => {
 
   const selectItem = (item: NavItem) => {
     setActiveItem(item.id)
-    if (item.path) navigate(item.path)
   }
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? 'U'

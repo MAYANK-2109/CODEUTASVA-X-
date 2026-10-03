@@ -1,225 +1,704 @@
-import React, { useEffect, useState } from 'react'
-import Sidebar from '../components/Sidebar'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { fetchNews, fetchPortfolio } from '../lib/api'
-import type { NewsItem, Portfolio } from '../lib/api'
+import { supabase } from '../lib/supabase'
 
-type Loadable<T> =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; data: T }
-
-const PRICE_REFRESH_MS = 60_000
-
-const formatMoney = (value: number, currency: string) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(value)
-
-const formatTimeAgo = (iso: string) => {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000))
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.round(hours / 24)}d ago`
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+interface Holding {
+  id?: string
+  user_id?: string
+  name: string
+  symbol: string
+  isin: string
+  type: 'STOCK' | 'MF' | 'ETF' | 'BOND'
+  buy_date: string | null
+  units: number | null
+  buy_price: number | null
+  current_price: number | null
+  created_at?: string
 }
 
-const greeting = () => {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
+type EditableHolding = Holding & { _rowKey: string }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+const BACKEND_URL: string = (import.meta as any).env?.VITE_BACKEND_URL ?? 'http://localhost:8000'
+
+const TYPE_COLOURS: Record<string, string> = {
+  STOCK: 'bg-blue-100 text-blue-700',
+  MF:    'bg-purple-100 text-purple-700',
+  ETF:   'bg-amber-100 text-amber-700',
+  BOND:  'bg-slate-100 text-slate-700',
 }
 
-const SectionCard: React.FC<{
-  id: string
-  title: string
-  note?: string
-  children: React.ReactNode
-}> = ({ id, title, note, children }) => (
-  <section
-    id={id}
-    className="bg-white rounded-2xl border border-groww-border-light shadow-card"
-  >
-    <div className="flex items-baseline justify-between gap-4 px-6 py-4 border-b border-groww-border-light">
-      <h2 className="text-base font-bold text-groww-text-primary">{title}</h2>
-      {note && <span className="text-xs text-groww-text-muted">{note}</span>}
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const fmt = (n: number | null | undefined, decimals = 2) =>
+  n == null ? '—' : n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+
+const fmtCur = (n: number | null | undefined) =>
+  n == null ? '—' : `\u20B9${fmt(n)}`
+
+function calcPnL(h: Holding) {
+  if (h.units == null || h.buy_price == null || h.current_price == null) return null
+  return (h.current_price - h.buy_price) * h.units
+}
+
+function pnlPct(h: Holding) {
+  if (h.buy_price == null || h.current_price == null) return null
+  return ((h.current_price - h.buy_price) / h.buy_price) * 100
+}
+
+function avatarColor(s: string): string {
+  const palette = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#10B981','#3B82F6','#14B8A6','#F97316','#EF4444','#06B6D4']
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffffff
+  return palette[Math.abs(h) % palette.length]
+}
+
+function StockLogo({ name, symbol }: { name: string; symbol: string }) {
+  const [err, setErr] = useState(false)
+  const ticker = (symbol || name || 'X').toUpperCase().split(' ')[0]
+  const color   = avatarColor(ticker)
+  if (!err) {
+    return (
+      <img
+        src={`https://logo.clearbit.com/${ticker.toLowerCase()}.com?size=40`}
+        alt={ticker}
+        className="w-9 h-9 rounded-lg object-contain bg-white border border-gray-100 p-0.5"
+        onError={() => setErr(true)}
+      />
+    )
+  }
+  return (
+    <div
+      className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0"
+      style={{ background: color }}
+    >
+      {ticker.slice(0, 2)}
     </div>
-    {children}
-  </section>
-)
+  )
+}
 
-const Message: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="px-6 py-8 text-sm text-groww-text-secondary text-center">{children}</p>
-)
+// ---------------------------------------------------------------------------
+// Upload Modal
+// ---------------------------------------------------------------------------
+interface UploadModalProps {
+  onClose: () => void
+  onAdd: (holdings: Holding[]) => void
+  userId: string
+}
 
-const PortfolioPage: React.FC = () => {
-  const { user } = useAuth()
-  const [portfolio, setPortfolio] = useState<Loadable<Portfolio>>({ status: 'loading' })
-  const [news, setNews] = useState<Loadable<NewsItem[]>>({ status: 'loading' })
+type ModalStep = 'upload' | 'preview' | 'saving'
+
+function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
+  const [step, setStep] = useState<ModalStep>('upload')
+  const [dragging, setDragging] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [rows, setRows] = useState<EditableHolding[]>([])
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    let cancelled = false
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
 
-    const loadPortfolio = () =>
-      fetchPortfolio()
-        .then((data) => !cancelled && setPortfolio({ status: 'ready', data }))
-        // Keep showing the last good prices if a refresh fails.
-        .catch(() => !cancelled && setPortfolio((prev) => (prev.status === 'ready' ? prev : { status: 'error' })))
-
-    loadPortfolio()
-    fetchNews()
-      .then((data) => !cancelled && setNews({ status: 'ready', data }))
-      .catch(() => !cancelled && setNews({ status: 'error' }))
-
-    const timer = setInterval(loadPortfolio, PRICE_REFRESH_MS)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
+  const handleFile = useCallback(async (file: File) => {
+    const ALLOWED_EXTS = ['.pdf', '.xlsx', '.xls']
+    const fname = file.name.toLowerCase()
+    if (!ALLOWED_EXTS.some(ext => fname.endsWith(ext))) { setError('Please upload a PDF, XLSX, or XLS file.'); return }
+    setError(null); setLoading(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/portfolio/upload-pdf`, { method: 'POST', body: formData })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Unknown error' }))
+        throw new Error(err.detail || `HTTP ${resp.status}`)
+      }
+      const data = await resp.json()
+      const extracted: Holding[] = data.holdings || []
+      if (extracted.length === 0) setError('No holdings extracted. Add them manually below.')
+      setRows(extracted.map((h, i) => ({ ...h, _rowKey: `row-${Date.now()}-${i}` })))
+      setStep('preview')
+    } catch (e: any) {
+      setRows([])
+      setStep('preview')
+      setError(`Backend unavailable (${e.message}). Add holdings manually below.`)
+    } finally {
+      setLoading(false)
     }
   }, [])
 
-  const userName = (user?.email ?? 'there').split('@')[0]
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleFile(file)
+  }, [handleFile])
+
+  const updateRow = (idx: number, field: keyof Holding, value: string) => {
+    setRows(prev => {
+      const next = [...prev]
+      const row = { ...next[idx] }
+      if (field === 'units' || field === 'buy_price' || field === 'current_price') {
+        (row as any)[field] = value === '' ? null : parseFloat(value)
+      } else {
+        (row as any)[field] = value
+      }
+      next[idx] = row
+      return next
+    })
+  }
+
+  const deleteRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx))
+
+  const addEmptyRow = () => {
+    setRows(prev => [...prev, {
+      _rowKey: `row-${Date.now()}-new`,
+      name: '', symbol: '', isin: '', type: 'STOCK',
+      buy_date: null, units: null, buy_price: null, current_price: null,
+    }])
+    setEditingIdx(rows.length)
+  }
+
+  const handleAdd = async () => {
+    const valid = rows.filter(r => r.name.trim())
+    if (valid.length === 0) { setError('Add at least one holding with a name.'); return }
+    setStep('saving'); setError(null)
+    const insertRows = valid.map(h => ({
+      user_id: userId, name: h.name.trim(), symbol: h.symbol || '',
+      isin: h.isin || '', type: h.type || 'STOCK', buy_date: h.buy_date || null,
+      units: h.units, buy_price: h.buy_price, current_price: h.current_price,
+    }))
+    try {
+      const { data, error: sbErr } = await supabase.from('portfolio_holdings').insert(insertRows).select()
+      if (sbErr) throw new Error(sbErr.message)
+      onAdd(data as Holding[])
+    } catch (e: any) {
+      setError(e.message || 'Failed to save holdings.')
+      setStep('preview')
+    }
+  }
+
+  const STEPS: ModalStep[] = ['upload', 'preview', 'saving']
 
   return (
-    <div id="portfolio-layout" className="flex h-screen overflow-hidden bg-groww-bg-primary">
-      <Sidebar />
+    <div
+      id="upload-modal-overlay"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,15,35,0.65)', backdropFilter: 'blur(6px)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        id="upload-modal"
+        className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        style={{ maxHeight: '90vh' }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-6 py-4 border-b border-white/10"
+          style={{ background: 'linear-gradient(135deg, #00B386 0%, #007A5A 100%)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-white font-bold text-base">Add Latest PDF</h2>
+              <p className="text-white/70 text-xs">
+                {step === 'upload' ? 'Upload PDF or Excel (.xlsx/.xls) broker statement' :
+                 step === 'preview' ? `${rows.length} holding${rows.length !== 1 ? 's' : ''} extracted — review & edit` :
+                 'Saving to your portfolio…'}
+              </p>
+            </div>
+          </div>
+          <button id="upload-modal-close" onClick={onClose} className="w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
 
-      <main id="portfolio-main" className="flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="max-w-6xl mx-auto p-6 flex flex-col gap-6">
-          {/* Welcome */}
-          <header
-            id="portfolio-welcome"
-            className="rounded-2xl px-6 py-6 text-white"
-            style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)' }}
-          >
-            <p className="text-sm opacity-90">
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </p>
-            <h1 className="text-2xl font-bold mt-1">
-              {greeting()}, <span className="capitalize">{userName}</span>
-            </h1>
-            <p className="text-sm opacity-90 mt-1">
-              Welcome back. Here is the latest on your portfolio.
-            </p>
-          </header>
+        {/* Step indicator */}
+        <div className="flex items-center px-6 pt-4 pb-1 gap-1">
+          {STEPS.map((s, i) => (
+            <React.Fragment key={s}>
+              <div className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${step === s ? 'text-groww-green' : i < STEPS.indexOf(step) ? 'text-groww-green/60' : 'text-gray-400'}`}>
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step === s ? 'bg-groww-green text-white' : i < STEPS.indexOf(step) ? 'bg-groww-green/20 text-groww-green' : 'bg-gray-100 text-gray-400'}`}>
+                  {i + 1}
+                </div>
+                <span className="capitalize">{s}</span>
+              </div>
+              {i < STEPS.length - 1 && <div className="flex-1 h-px bg-gray-200 mx-2 max-w-[60px]" />}
+            </React.Fragment>
+          ))}
+        </div>
 
-          {/* News */}
-          <SectionCard id="portfolio-news" title="News" note="Headlines on your holdings">
-            {news.status === 'loading' && <Message>Loading news…</Message>}
-            {news.status === 'error' && (
-              <Message>Could not load news. Check that the backend is running.</Message>
-            )}
-            {news.status === 'ready' && news.data.length === 0 && (
-              <Message>No recent headlines available right now.</Message>
-            )}
-            {news.status === 'ready' && news.data.length > 0 && (
-              <ul className="divide-y divide-groww-border-light">
-                {news.data.map((item) => (
-                  <li key={item.url ?? item.title}>
-                    <a
-                      href={item.url ?? undefined}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block px-6 py-3 hover:bg-groww-green-pale transition-colors duration-200"
-                    >
-                      <p className="text-sm font-medium text-groww-text-primary">{item.title}</p>
-                      <p className="text-xs text-groww-text-muted mt-1">
-                        {[item.source, item.published_at && formatTimeAgo(item.published_at)]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SectionCard>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto">
+          {error && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              {error}
+            </div>
+          )}
 
-          {/* Holdings */}
-          <SectionCard
-            id="portfolio-holdings"
-            title="Holdings"
-            note={
-              portfolio.status === 'ready'
-                ? portfolio.data.prices_as_of
-                  ? `Prices updated ${new Date(portfolio.data.prices_as_of).toLocaleTimeString('en-IN')}`
-                  : 'Live prices unavailable'
-                : undefined
-            }
-          >
-            {portfolio.status === 'loading' && <Message>Loading holdings…</Message>}
-            {portfolio.status === 'error' && (
-              <Message>Could not load holdings. Check that the backend is running.</Message>
-            )}
-            {portfolio.status === 'ready' && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-groww-text-muted text-right">
-                      <th className="px-6 py-3 font-medium text-left">Stock</th>
-                      <th className="px-6 py-3 font-medium">No. of shares</th>
-                      <th className="px-6 py-3 font-medium">Total avg. price</th>
-                      <th className="px-6 py-3 font-medium">Current total price</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-groww-border-light border-t border-groww-border-light">
-                    {portfolio.data.holdings.map((h) => {
-                      const change = h.current_value === null ? null : h.current_value - h.invested_value
-                      return (
-                        <tr key={h.ticker} className="text-right tabular-nums">
-                          <td className="px-6 py-3 text-left">
-                            <p className="font-semibold text-groww-text-primary">{h.name}</p>
-                            <p className="text-xs text-groww-text-muted">{h.ticker.replace('.NS', '')}</p>
-                          </td>
-                          <td className="px-6 py-3 text-groww-text-primary">{h.shares}</td>
-                          <td className="px-6 py-3">
-                            <p className="text-groww-text-primary">
-                              {formatMoney(h.invested_value, portfolio.data.currency)}
-                            </p>
-                            <p className="text-xs text-groww-text-muted">
-                              {formatMoney(h.avg_price, portfolio.data.currency)} / share
-                            </p>
-                          </td>
-                          <td className="px-6 py-3">
-                            {h.current_value === null || h.current_price === null || change === null ? (
-                              <span className="text-groww-text-muted" title="Live price unavailable">—</span>
-                            ) : (
-                              <>
-                                <p className={`font-semibold ${change >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
-                                  {formatMoney(h.current_value, portfolio.data.currency)}
-                                </p>
-                                <p className="text-xs text-groww-text-muted">
-                                  {formatMoney(h.current_price, portfolio.data.currency)} / share
-                                </p>
-                              </>
-                            )}
+          {/* Upload Step */}
+          {step === 'upload' && (
+            <div className="p-6">
+              <div
+                id="pdf-dropzone"
+                className={`relative border-2 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center cursor-pointer transition-all duration-200 ${dragging ? 'border-groww-green bg-green-50' : 'border-gray-200 hover:border-groww-green hover:bg-green-50/30'}`}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                onClick={() => fileRef.current?.click()}
+              >
+                <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f) }} id="pdf-file-input" />
+                {loading ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 border-4 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
+                    <p className="text-sm text-gray-500 font-medium">Extracting holdings from file…</p>
+                    <p className="text-xs text-gray-400">This may take a few seconds</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: dragging ? 'rgba(0,179,134,0.15)' : '#F0FAF7' }}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00B386" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                    </div>
+                    <p className="text-base font-semibold text-gray-700 mb-1">{dragging ? 'Drop your file here' : 'Drag & drop your PDF or Excel file'}</p>
+                    <p className="text-sm text-gray-400 mb-4">or click to browse</p>
+                    <div className="flex items-center gap-5 text-xs text-gray-400 flex-wrap justify-center">
+                      {['PDF', 'Excel .xlsx/.xls', 'CDSL CAS', 'Zerodha', 'Groww'].map(b => (
+                        <span key={b} className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-groww-green inline-block"/>
+                          {b}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 text-center mt-4 flex items-center justify-center gap-1">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                Your file is processed in-memory and never permanently stored on our servers.
+              </p>
+            </div>
+          )}
+
+          {/* Preview Step */}
+          {step === 'preview' && (
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm text-gray-500">Review extracted data. Click any field to edit it.</p>
+                <button
+                  id="add-empty-row-btn"
+                  onClick={addEmptyRow}
+                  className="flex items-center gap-1.5 text-xs font-medium text-groww-green hover:text-groww-green-dark px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                  Add row manually
+                </button>
+              </div>
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        {['Name *', 'Symbol', 'Type', 'Buy Date', 'Units', 'Buy Price', 'Live Price', ''].map(h => (
+                          <th key={h} className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="text-center py-10 text-gray-400 text-sm">
+                            No data extracted. Use "Add row manually" to add holdings.
                           </td>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="text-right tabular-nums font-bold text-groww-text-primary border-t border-groww-border">
-                      <td className="px-6 py-4 text-left" colSpan={2}>Total</td>
-                      <td className="px-6 py-4">
-                        {formatMoney(portfolio.data.totals.invested_value, portfolio.data.currency)}
-                      </td>
-                      <td className="px-6 py-4">
-                        {portfolio.data.totals.current_value === null
-                          ? '—'
-                          : formatMoney(portfolio.data.totals.current_value, portfolio.data.currency)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
+                      ) : rows.map((row, idx) => (
+                        <tr
+                          key={row._rowKey}
+                          className={`border-b border-gray-100 last:border-0 transition-colors ${editingIdx === idx ? 'bg-green-50/60' : 'hover:bg-gray-50'}`}
+                          onClick={() => setEditingIdx(idx)}
+                        >
+                          <td className="px-3 py-2">
+                            <input className="w-full min-w-[130px] bg-transparent outline-none text-gray-800 font-medium placeholder-gray-300 focus:border-b border-groww-green px-1"
+                              value={row.name} onChange={e => updateRow(idx, 'name', e.target.value)}
+                              placeholder="e.g. Infosys Ltd" onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input className="w-full min-w-[80px] bg-transparent outline-none text-gray-600 placeholder-gray-300 px-1"
+                              value={row.symbol} onChange={e => updateRow(idx, 'symbol', e.target.value)}
+                              placeholder="INFY" onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select className="bg-transparent outline-none text-gray-600 text-xs rounded px-1 cursor-pointer"
+                              value={row.type} onChange={e => updateRow(idx, 'type', e.target.value)}
+                              onClick={e => e.stopPropagation()}>
+                              <option>STOCK</option><option>MF</option><option>ETF</option><option>BOND</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="date" className="bg-transparent outline-none text-gray-600 text-xs px-1 min-w-[110px]"
+                              value={row.buy_date || ''} onChange={e => updateRow(idx, 'buy_date', e.target.value)}
+                              onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" className="w-full min-w-[70px] bg-transparent outline-none text-gray-600 px-1"
+                              value={row.units ?? ''} onChange={e => updateRow(idx, 'units', e.target.value)}
+                              placeholder="0" onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" className="w-full min-w-[90px] bg-transparent outline-none text-gray-600 px-1"
+                              value={row.buy_price ?? ''} onChange={e => updateRow(idx, 'buy_price', e.target.value)}
+                              placeholder="0.00" onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" className="w-full min-w-[90px] bg-transparent outline-none text-gray-600 px-1"
+                              value={row.current_price ?? ''} onChange={e => updateRow(idx, 'current_price', e.target.value)}
+                              placeholder="Optional" onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <button onClick={e => { e.stopPropagation(); deleteRow(idx) }}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Remove row">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            )}
-          </SectionCard>
+              <p className="text-xs text-gray-400 mt-3 flex items-center gap-1">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                Fields marked * are required. Live prices can be updated later.
+              </p>
+            </div>
+          )}
+
+          {/* Saving Step */}
+          {step === 'saving' && (
+            <div className="p-12 flex flex-col items-center justify-center gap-4">
+              <div className="w-14 h-14 border-4 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
+              <p className="text-base font-semibold text-gray-700">Saving your holdings…</p>
+              <p className="text-sm text-gray-400">Just a moment</p>
+            </div>
+          )}
         </div>
-      </main>
+
+        {/* Footer */}
+        {step !== 'saving' && (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-white">
+            {step === 'preview' ? (
+              <>
+                <button id="modal-back-btn" onClick={() => { setStep('upload'); setRows([]); setError(null) }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6"/>
+                  </svg>
+                  Back
+                </button>
+                <div className="flex items-center gap-3">
+                  <button id="modal-cancel-btn" onClick={onClose}
+                    className="px-5 py-2 rounded-xl text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors">
+                    Cancel
+                  </button>
+                  <button
+                    id="modal-add-btn"
+                    onClick={handleAdd}
+                    disabled={rows.filter(r => r.name.trim()).length === 0}
+                    className="px-6 py-2 rounded-xl text-sm font-semibold text-white transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 active:translate-y-0"
+                    style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Add {rows.filter(r => r.name.trim()).length} Holding{rows.filter(r => r.name.trim()).length !== 1 ? 's' : ''}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button id="modal-cancel-upload-btn" onClick={onClose}
+                className="px-5 py-2 rounded-xl text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main Portfolio Page
+// ---------------------------------------------------------------------------
+const PortfolioPage: React.FC = () => {
+  const { user } = useAuth()
+  const [holdings, setHoldings] = useState<Holding[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [filterType, setFilterType] = useState<string>('ALL')
+  const [sortBy, setSortBy] = useState<'name' | 'pnl' | 'value'>('name')
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchHoldings = useCallback(async () => {
+    if (!user?.id) return
+    setLoading(true); setError(null)
+    try {
+      const { data, error: sbErr } = await supabase
+        .from('portfolio_holdings').select('*')
+        .eq('user_id', user.id).order('created_at', { ascending: false })
+      if (sbErr) throw sbErr
+      setHoldings((data as Holding[]) || [])
+    } catch (e: any) {
+      setError(e.message || 'Failed to load portfolio.')
+    } finally {
+      setLoading(false)
+    }
+  }, [user?.id])
+
+  useEffect(() => { fetchHoldings() }, [fetchHoldings])
+
+  const handleAdd = (newHoldings: Holding[]) => {
+    setHoldings(prev => [...newHoldings, ...prev])
+    setShowModal(false)
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Remove this holding from your portfolio?')) return
+    const { error: sbErr } = await supabase.from('portfolio_holdings').delete().eq('id', id)
+    if (!sbErr) setHoldings(prev => prev.filter(h => h.id !== id))
+  }
+
+  const displayed = holdings
+    .filter(h => filterType === 'ALL' || h.type === filterType)
+    .sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name)
+      if (sortBy === 'pnl')  return (calcPnL(b) ?? 0) - (calcPnL(a) ?? 0)
+      const av = (a.units ?? 0) * (a.current_price ?? a.buy_price ?? 0)
+      const bv = (b.units ?? 0) * (b.current_price ?? b.buy_price ?? 0)
+      return bv - av
+    })
+
+  const totalInvested = holdings.reduce((s, h) => s + (h.units ?? 0) * (h.buy_price ?? 0), 0)
+  const totalCurrent  = holdings.reduce((s, h) => s + (h.units ?? 0) * (h.current_price ?? h.buy_price ?? 0), 0)
+  const totalPnL      = totalCurrent - totalInvested
+  const totalPnLPct   = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0
+
+  return (
+    <div id="portfolio-page" className="flex flex-col min-h-full">
+      {/* Header */}
+      <header
+        id="portfolio-header"
+        className="sticky top-0 z-10 bg-white border-b border-groww-border-light px-6 py-4 flex items-center justify-between"
+        style={{ minHeight: '72px' }}
+      >
+        <div>
+          <h1 className="text-lg font-bold text-groww-text-primary">Portfolio</h1>
+          <p className="text-xs text-groww-text-muted mt-0.5">
+            {holdings.length} holding{holdings.length !== 1 ? 's' : ''} &middot; {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </p>
+        </div>
+        <button
+          id="add-pdf-btn"
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+          style={{ background: 'linear-gradient(135deg, #00B386 0%, #007A5A 100%)', boxShadow: '0 4px 14px rgba(0,179,134,0.3)' }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+          Add Latest PDF
+        </button>
+      </header>
+
+      <div className="flex-1 p-6">
+        {error && <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm">{error}</div>}
+
+        {/* Summary Cards */}
+        {holdings.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            {[
+              { label: 'Total Invested', value: fmtCur(totalInvested), icon: '💰', color: '#6366F1' },
+              { label: 'Current Value',  value: fmtCur(totalCurrent),  icon: '📊', color: '#00B386' },
+              {
+                label: 'Total P&L',
+                value: `${totalPnL >= 0 ? '+' : ''}${fmtCur(totalPnL)} (${totalPnL >= 0 ? '+' : ''}${totalPnLPct.toFixed(2)}%)`,
+                icon: totalPnL >= 0 ? '📈' : '📉',
+                color: totalPnL >= 0 ? '#16A34A' : '#DC2626',
+              },
+            ].map(card => (
+              <div key={card.label} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">{card.icon}</span>
+                  <span className="text-xs font-medium text-gray-500">{card.label}</span>
+                </div>
+                <p className="text-xl font-bold" style={{ color: card.color }}>{card.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Filters + Sort */}
+        {holdings.length > 0 && (
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              {(['ALL', 'STOCK', 'MF', 'ETF', 'BOND'] as const).map(t => (
+                <button key={t} onClick={() => setFilterType(t)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${filterType === t ? 'bg-groww-green text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
+              className="text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 outline-none cursor-pointer focus:border-groww-green">
+              <option value="name">Sort: Name</option>
+              <option value="pnl">Sort: P&L</option>
+              <option value="value">Sort: Value</option>
+            </select>
+          </div>
+        )}
+
+        {/* Holdings Table */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-10 h-10 border-4 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
+            <p className="text-sm text-gray-400">Loading your portfolio…</p>
+          </div>
+        ) : displayed.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5" style={{ background: 'linear-gradient(135deg, #E8F5F1, #F0FAF7)' }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#00B386" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+              </svg>
+            </div>
+            <h2 className="text-lg font-bold text-gray-700 mb-2">{holdings.length === 0 ? 'No holdings yet' : 'No holdings match the filter'}</h2>
+            <p className="text-sm text-gray-400 max-w-xs mb-6">
+              {holdings.length === 0 ? 'Upload your broker PDF or Excel file to auto-import your portfolio.' : 'Try selecting a different asset type.'}
+            </p>
+            {holdings.length === 0 && (
+              <button onClick={() => setShowModal(true)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:-translate-y-0.5"
+                style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)', boxShadow: '0 4px 14px rgba(0,179,134,0.3)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Add Latest PDF
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">Stock</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Type</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Units</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Buy Price</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Live Rate</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Invested</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">P&L</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayed.map((h, i) => {
+                    const pnl      = calcPnL(h)
+                    const pnlP     = pnlPct(h)
+                    const isProfit = pnl != null && pnl >= 0
+                    const invested = (h.units ?? 0) * (h.buy_price ?? 0)
+                    return (
+                      <tr key={h.id || i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors group">
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <StockLogo name={h.name} symbol={h.symbol} />
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800 leading-tight">{h.name}</p>
+                              {(h.symbol || h.isin) && <p className="text-xs text-gray-400">{h.symbol || h.isin}</p>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide ${TYPE_COLOURS[h.type] || 'bg-gray-100 text-gray-600'}`}>
+                            {h.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-right text-sm text-gray-700 tabular-nums">{fmt(h.units, 3)}</td>
+                        <td className="px-4 py-3.5 text-right text-sm text-gray-700 tabular-nums">{fmtCur(h.buy_price)}</td>
+                        <td className="px-4 py-3.5 text-right">
+                          {h.current_price != null
+                            ? <span className="text-sm font-medium text-gray-800 tabular-nums">{fmtCur(h.current_price)}</span>
+                            : <span className="text-xs text-gray-400 italic">Pending</span>}
+                        </td>
+                        <td className="px-4 py-3.5 text-right text-sm text-gray-600 tabular-nums">{fmtCur(invested)}</td>
+                        <td className="px-4 py-3.5 text-right">
+                          {pnl != null ? (
+                            <div className={`flex flex-col items-end ${isProfit ? 'text-green-600' : 'text-red-500'}`}>
+                              <span className="text-sm font-semibold tabular-nums">{isProfit ? '+' : ''}{fmtCur(pnl)}</span>
+                              <span className="text-[10px] font-medium tabular-nums opacity-80">{isProfit ? '▲' : '▼'} {Math.abs(pnlP ?? 0).toFixed(2)}%</span>
+                            </div>
+                          ) : <span className="text-xs text-gray-400">—</span>}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          {h.id && (
+                            <button onClick={() => handleDelete(h.id!)}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-400 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all" title="Remove holding">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                                <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                              </svg>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showModal && user && (
+        <UploadModal onClose={() => setShowModal(false)} onAdd={handleAdd} userId={user.id} />
+      )}
     </div>
   )
 }
