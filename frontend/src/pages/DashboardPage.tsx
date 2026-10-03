@@ -21,8 +21,8 @@ const DashboardPage: React.FC = () => {
         {/* Top header bar */}
         <header
           id="dashboard-header"
-          className="sticky top-0 z-10 bg-white border-b border-groww-border-light px-6 py-4 flex items-center justify-between"
-          style={{ minHeight: '72px' }}
+          className="sticky top-0 z-10 bg-white border-b border-groww-border-light px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between"
+          style={{ minHeight: '64px' }}
         >
           <div>
             <h1 className="text-lg font-bold text-groww-text-primary">Dashboard</h1>

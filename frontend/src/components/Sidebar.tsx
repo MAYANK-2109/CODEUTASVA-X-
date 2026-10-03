@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
 
 interface NavItem {
   id: string
@@ -73,9 +72,8 @@ const navItems: NavItem[] = [
 const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  const [collapsed, setCollapsed] = useState(false)
-  const navigate = useNavigate()
   const { pathname } = useLocation()
+  const [collapsed, setCollapsed] = useState(false)
   const [activeItem, setActiveItem] = useState(
     navItems.find((item) => item.path === pathname)?.id ?? 'dashboard'
   )
