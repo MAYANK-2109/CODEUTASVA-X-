@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
@@ -74,7 +74,7 @@ interface SidebarProps {
   onNavigate?: (page: string) => void
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activePage: _activePage = 'dashboard', onNavigate }) => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -83,8 +83,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate 
     navItems.find((item) => item.path === pathname)?.id ?? 'dashboard'
   )
 
+  useEffect(() => {
+    const current = navItems.find((item) => item.path === pathname)
+    if (current) {
+      setActiveItem(current.id)
+    }
+  }, [pathname])
+
   const selectItem = (item: NavItem) => {
     setActiveItem(item.id)
+    if (item.path && item.path !== pathname) {
+      navigate(item.path)
+    }
+    onNavigate?.(item.id)
   }
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? 'U'
