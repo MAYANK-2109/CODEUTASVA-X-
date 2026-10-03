@@ -18,6 +18,17 @@ interface NewsItem {
   holdings: string[]
 }
 
+interface HoldingRow {
+  id: string
+  name: string
+  symbol: string
+  type: string          // stock | etf | mf | bond | other
+  units: number
+  buyPrice: number
+  livePrice: number | null
+  history: number[]     // last ~30 closing prices, oldest first
+}
+
 interface PortfolioStats {
   totalInvested: number
   totalCurrent: number
@@ -55,6 +66,68 @@ function portfolioHealth(positions: { name: string; value: number }[]) {
   const largest = positions.reduce((a, b) => (b.value > a.value ? b : a))
   const label = effective < 3 ? 'Concentrated' : effective < 6 ? 'Moderately diversified' : 'Diversified'
   return { label, detail: `Largest holding is ${((largest.value / total) * 100).toFixed(0)}% (${largest.name})` }
+}
+
+// ── Mini sparkline (96×48, matches reference image style) ──────────────────────
+
+const MiniSparkline: React.FC<{ values: number[]; positive: boolean }> = ({ values, positive }) => {
+  const W = 96, H = 48, padX = 4, padY = 6
+  if (values.length < 2) {
+    return (
+      <svg width={W} height={H} aria-hidden style={{ display: 'block' }}>
+        <rect x={0} y={0} width={W} height={H} rx={6} fill={positive ? 'rgba(0,179,134,0.06)' : 'rgba(239,68,68,0.06)'} />
+        <line x1={padX} y1={H / 2} x2={W - padX} y2={H / 2} stroke="#e5e7eb" strokeWidth="1.5" strokeDasharray="3 2" />
+      </svg>
+    )
+  }
+  const lo = Math.min(...values)
+  const hi = Math.max(...values)
+  const span = hi - lo || 1
+  const px = (i: number) => padX + (i / (values.length - 1)) * (W - padX * 2)
+  const py = (v: number) => H - padY - ((v - lo) / span) * (H - padY * 2)
+  let d = ''
+  // Smooth curve via cubic bezier
+  values.forEach((v, i) => {
+    if (i === 0) { d += `M${px(i).toFixed(1)},${py(v).toFixed(1)}` }
+    else {
+      const cpX = (px(i) + px(i - 1)) / 2
+      d += ` C${cpX.toFixed(1)},${py(values[i - 1]).toFixed(1)} ${cpX.toFixed(1)},${py(v).toFixed(1)} ${px(i).toFixed(1)},${py(v).toFixed(1)}`
+    }
+  })
+  const fillD = `${d} L${px(values.length - 1).toFixed(1)},${H} L${px(0).toFixed(1)},${H} Z`
+  const color = positive ? '#00B386' : '#EF4444'
+  const fillColor = positive ? 'rgba(0,179,134,0.13)' : 'rgba(239,68,68,0.11)'
+  const dotX = px(values.length - 1)
+  const dotY = py(values[values.length - 1])
+  return (
+    <svg width={W} height={H} aria-label="price sparkline" style={{ display: 'block', overflow: 'visible' }}>
+      <rect x={0} y={0} width={W} height={H} rx={6} fill={fillColor} />
+      <path d={fillD} fill={fillColor} />
+      <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={dotX} cy={dotY} r="3.5" fill={color} stroke="white" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+// ── Avatar initials helper ──────────────────────────────────────────────────────
+
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg,#F97316,#EA580C)',
+  'linear-gradient(135deg,#3B82F6,#1D4ED8)',
+  'linear-gradient(135deg,#10B981,#047857)',
+  'linear-gradient(135deg,#8B5CF6,#6D28D9)',
+  'linear-gradient(135deg,#EF4444,#B91C1C)',
+  'linear-gradient(135deg,#F59E0B,#D97706)',
+  'linear-gradient(135deg,#EC4899,#BE185D)',
+  'linear-gradient(135deg,#14B8A6,#0F766E)',
+  'linear-gradient(135deg,#6366F1,#4338CA)',
+  'linear-gradient(135deg,#84CC16,#4D7C0F)',
+]
+
+function stockInitials(name: string): string {
+  const words = name.trim().split(/[\s\-_]+/).filter(Boolean)
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return (words[0][0] + words[1][0]).toUpperCase()
 }
 
 // ── SVG Icon Components (Strictly NO emojis) ──────────────────────────────────
@@ -217,6 +290,8 @@ const DashboardPage: React.FC = () => {
   const [market, setMarket] = useState<MarketOverview | null>(null)
   const [marketFailed, setMarketFailed] = useState(false)
   const [portfolioLoading, setPortfolioLoading] = useState(true)
+  const [holdingRows, setHoldingRows] = useState<HoldingRow[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const [news, setNews] = useState<NewsItem[]>([])
   const [newsLoading, setNewsLoading] = useState(true)
@@ -369,6 +444,84 @@ const DashboardPage: React.FC = () => {
     }
   }, [user?.id, backendUrl])
 
+  // ── Fetch per-holding price history (sparklines) ────────────────────────────
+  const fetchHoldingHistory = useCallback(async () => {
+    if (!user?.id) return
+    setHistoryLoading(true)
+    try {
+      const { data: saved, error } = await supabase
+        .from('portfolio_holdings')
+        .select('*')
+        .eq('user_id', user.id)
+      const holdings = (saved ?? []).filter((h: any) => !isLeftover(h))
+      if (error || holdings.length === 0) return
+
+      // Fetch live prices
+      let live: Record<string, number> = {}
+      try {
+        const res = await fetch(`${backendUrl}/api/prices`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            holdings: holdings.map((h: any) => ({
+              key: String(h.id), symbol: h.symbol ?? '', isin: h.isin ?? '', name: h.name ?? '',
+            })),
+          }),
+        })
+        if (res.ok) live = (await res.json()).prices ?? {}
+      } catch { /* use buy prices */ }
+
+      // Fetch sparkline history from backend insights endpoint
+      let priceHistory: Record<string, number[]> = {}
+      try {
+        const res = await fetch(`${backendUrl}/api/insights/portfolio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            holdings: holdings.map((h: any) => ({
+              name: h.name, symbol: h.symbol, isin: h.isin, units: h.units, buy_price: h.buy_price, type: h.type,
+            })),
+            range: '1y',
+          }),
+        })
+        if (res.ok) {
+          const json = await res.json()
+          const series: { ticker: string; values: (number | null)[] }[] = json?.prices?.series ?? []
+          series.forEach((s) => {
+            const nums = s.values.filter((v): v is number => v !== null)
+            // Take last 30 points
+            priceHistory[s.ticker] = nums.slice(-30)
+          })
+        }
+      } catch { /* sparkline stays empty */ }
+
+      const classify = (h: any): string => {
+        const t = (h.type ?? '').toLowerCase()
+        if (t.includes('etf')) return 'ETF'
+        if (t.includes('mf') || t.includes('mutual') || t.includes('fund')) return 'MF'
+        if (t.includes('bond') || t.includes('debt') || t.includes('ncd')) return 'Bond'
+        return 'Stock'
+      }
+
+      const rows: HoldingRow[] = holdings.map((h: any) => {
+        const ticker = (h.symbol ?? '').toUpperCase()
+        return {
+          id: String(h.id),
+          name: h.name ?? ticker,
+          symbol: ticker,
+          type: classify(h),
+          units: Number(h.units) || 0,
+          buyPrice: Number(h.buy_price) || 0,
+          livePrice: live[String(h.id)] ?? null,
+          history: priceHistory[ticker] ?? priceHistory[`${ticker}.NS`] ?? priceHistory[`${ticker}.BO`] ?? [],
+        }
+      })
+      setHoldingRows(rows)
+    } catch { /* silent */ } finally {
+      setHistoryLoading(false)
+    }
+  }, [user?.id, backendUrl])
+
   // ── Fetch News Trail Data: only headlines that name a stock the user holds ──
   const fetchNewsData = useCallback(async () => {
     if (!user?.id) return
@@ -427,7 +580,8 @@ const DashboardPage: React.FC = () => {
     fetchPortfolioData()
     fetchNewsData()
     fetchMarketData()
-  }, [fetchPortfolioData, fetchNewsData])
+    fetchHoldingHistory()
+  }, [fetchPortfolioData, fetchNewsData, fetchHoldingHistory])
 
   // One filter per holding that has a headline, most headlines first.
   const newsHoldings = useMemo(() => {
@@ -1009,6 +1163,156 @@ const DashboardPage: React.FC = () => {
                     {portfolioStats.unpricedCount} holding{portfolioStats.unpricedCount !== 1 ? 's have' : ' has'} no market
                     price and {portfolioStats.unpricedCount !== 1 ? 'are' : 'is'} counted at cost in the current value.
                   </p>
+                )}
+
+                {/* ── Holdings Breakdown with Sparklines ──────────────────── */}
+                {holdingRows.length > 0 && (
+                  <div id="dashboard-holdings-breakdown" className="mt-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-bold text-groww-text-primary tracking-tight">Holdings Breakdown</h4>
+                      {historyLoading && (
+                        <span className="text-[10px] text-groww-text-muted flex items-center gap-1">
+                          <span className="w-3 h-3 border border-groww-green/30 border-t-groww-green rounded-full animate-spin inline-block" />
+                          Updating charts…
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="overflow-x-auto" style={{ marginLeft: '-4px', marginRight: '-4px' }}>
+                      <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: '0 6px', minWidth: 560 }}>
+                        <thead>
+                          <tr>
+                            <th className="pl-2 pr-3 pb-1 text-left font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Stock</th>
+                            <th className="px-2 pb-1 text-left font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Type</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Units</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Buy Price</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Live Rate</th>
+                            <th className="px-2 pb-1 text-center font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">30d Trend</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Invested</th>
+                            <th className="pr-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">P&amp;L</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {holdingRows.map((row, idx) => {
+                            const invested = row.units * row.buyPrice
+                            const livePrice = row.livePrice
+                            const currentVal = livePrice != null ? row.units * livePrice : null
+                            const pnlAmt = currentVal != null ? currentVal - invested : null
+                            const pnlPct = livePrice != null && row.buyPrice > 0
+                              ? ((livePrice - row.buyPrice) / row.buyPrice) * 100
+                              : null
+                            const isUp = pnlPct == null ? true : pnlPct >= 0
+                            const trendIsUp = row.history.length >= 2 ? row.history[row.history.length - 1] >= row.history[0] : true
+
+                            const typeBadgeStyle: Record<string, { bg: string; color: string; border: string }> = {
+                              ETF:       { bg: '#EDE9FE', color: '#6D28D9', border: '#DDD6FE' },
+                              MF:        { bg: '#DBEAFE', color: '#1D4ED8', border: '#BFDBFE' },
+                              Bond:      { bg: '#FEF3C7', color: '#B45309', border: '#FDE68A' },
+                              Commodity: { bg: '#FFF7ED', color: '#C2410C', border: '#FED7AA' },
+                              Stock:     { bg: '#ECFDF5', color: '#047857', border: '#A7F3D0' },
+                            }
+                            const ts = typeBadgeStyle[row.type] ?? typeBadgeStyle.Stock
+                            const initials = stockInitials(row.name)
+                            const avatarGrad = AVATAR_GRADIENTS[idx % AVATAR_GRADIENTS.length]
+
+                            return (
+                              <tr
+                                key={row.id}
+                                className="group transition-colors"
+                                style={{ background: 'white' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#F0FDF8')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                              >
+                                {/* Avatar + Name + Symbol */}
+                                <td className="pl-2 pr-3 py-2.5" style={{ borderRadius: '12px 0 0 12px' }}>
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div
+                                      className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white font-bold text-[11px] tracking-wide shadow-sm"
+                                      style={{ background: avatarGrad }}
+                                    >
+                                      {initials}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-groww-text-primary text-[12px] leading-tight truncate max-w-[100px]" title={row.name}>
+                                        {row.name}
+                                      </p>
+                                      <p className="text-[10px] text-groww-text-muted font-medium tracking-wide">{row.symbol || '—'}</p>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Type badge */}
+                                <td className="px-2 py-2.5">
+                                  <span
+                                    className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                                    style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.border}` }}
+                                  >
+                                    {row.type}
+                                  </span>
+                                </td>
+
+                                {/* Units */}
+                                <td className="px-2 py-2.5 text-right">
+                                  <span className="font-semibold text-groww-text-primary">{row.units.toLocaleString('en-IN')}</span>
+                                </td>
+
+                                {/* Buy Price */}
+                                <td className="px-2 py-2.5 text-right">
+                                  <span className="font-semibold text-groww-text-primary">{fmtCur(row.buyPrice)}</span>
+                                </td>
+
+                                {/* Live Rate */}
+                                <td className="px-2 py-2.5 text-right">
+                                  {livePrice != null ? (
+                                    <>
+                                      <span className="font-bold text-groww-text-primary">{fmtCur(livePrice)}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="font-bold text-groww-text-primary">{fmtCur(row.buyPrice)}</span>
+                                      <span className="block text-[9px] text-groww-text-muted font-medium">Saved</span>
+                                    </>
+                                  )}
+                                </td>
+
+                                {/* Sparkline — between Live Rate and Invested */}
+                                <td className="px-2 py-1.5 text-center">
+                                  <MiniSparkline values={row.history} positive={trendIsUp} />
+                                </td>
+
+                                {/* Invested */}
+                                <td className="px-2 py-2.5 text-right">
+                                  <span className="font-semibold text-groww-text-primary">{fmtCur(invested)}</span>
+                                </td>
+
+                                {/* P&L */}
+                                <td className="pr-2 py-2.5 text-right" style={{ borderRadius: '0 12px 12px 0' }}>
+                                  {pnlAmt != null && pnlPct != null ? (
+                                    <>
+                                      <span className={`font-bold text-[12px] ${isUp ? 'text-groww-green' : 'text-red-500'}`}>
+                                        {pnlAmt >= 0 ? '+' : ''}{fmtCur(pnlAmt)}
+                                      </span>
+                                      <span className={`flex items-center justify-end gap-0.5 text-[10px] font-semibold mt-0.5 ${isUp ? 'text-groww-green' : 'text-red-500'}`}>
+                                        <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                                          {isUp
+                                            ? <polygon points="4,1 7,7 1,7" />
+                                            : <polygon points="4,7 7,1 1,1" />
+                                          }
+                                        </svg>
+                                        {Math.abs(pnlPct).toFixed(2)}%
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-groww-text-muted">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 )}
 
                 {/* ── Asset Allocation / Performance Bar ──────────────────── */}

@@ -92,6 +92,47 @@ function StockLogo({ name, symbol }: { name: string; symbol: string }) {
   )
 }
 
+// ── Mini sparkline (96×48, matches reference image style) ──────────────────────
+
+const MiniSparkline: React.FC<{ values: number[]; positive: boolean }> = ({ values, positive }) => {
+  const W = 96, H = 48, padX = 4, padY = 6
+  if (values.length < 2) {
+    return (
+      <svg width={W} height={H} aria-hidden style={{ display: 'block', margin: '0 auto' }}>
+        <rect x={0} y={0} width={W} height={H} rx={6} fill={positive ? 'rgba(0,179,134,0.06)' : 'rgba(239,68,68,0.06)'} />
+        <line x1={padX} y1={H / 2} x2={W - padX} y2={H / 2} stroke="#e5e7eb" strokeWidth="1.5" strokeDasharray="3 2" />
+      </svg>
+    )
+  }
+  const lo = Math.min(...values)
+  const hi = Math.max(...values)
+  const span = hi - lo || 1
+  const px = (i: number) => padX + (i / (values.length - 1)) * (W - padX * 2)
+  const py = (v: number) => H - padY - ((v - lo) / span) * (H - padY * 2)
+  let d = ''
+  // Smooth curve via cubic bezier
+  values.forEach((v, i) => {
+    if (i === 0) { d += `M${px(i).toFixed(1)},${py(v).toFixed(1)}` }
+    else {
+      const cpX = (px(i) + px(i - 1)) / 2
+      d += ` C${cpX.toFixed(1)},${py(values[i - 1]).toFixed(1)} ${cpX.toFixed(1)},${py(v).toFixed(1)} ${px(i).toFixed(1)},${py(v).toFixed(1)}`
+    }
+  })
+  const fillD = `${d} L${px(values.length - 1).toFixed(1)},${H} L${px(0).toFixed(1)},${H} Z`
+  const color = positive ? '#00B386' : '#EF4444'
+  const fillColor = positive ? 'rgba(0,179,134,0.13)' : 'rgba(239,68,68,0.11)'
+  const dotX = px(values.length - 1)
+  const dotY = py(values[values.length - 1])
+  return (
+    <svg width={W} height={H} aria-label="price sparkline" style={{ display: 'block', overflow: 'visible', margin: '0 auto' }}>
+      <rect x={0} y={0} width={W} height={H} rx={6} fill={fillColor} />
+      <path d={fillD} fill={fillColor} />
+      <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={dotX} cy={dotY} r="3.5" fill={color} stroke="white" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Upload Modal
 // ---------------------------------------------------------------------------
@@ -519,6 +560,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
   const [liveTickers, setLiveTickers] = useState<Record<string, string>>({})
   const [pricesAsOf, setPricesAsOf] = useState<string | null>(null)
   const [pricesFailed, setPricesFailed] = useState(false)
+  const [priceHistory, setPriceHistory] = useState<Record<string, number[]>>({})
 
   const fetchHoldings = useCallback(async () => {
     if (!user?.id) return
@@ -552,6 +594,47 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
   const refsJson = JSON.stringify(
     holdings.map(h => ({ key: priceKey(h), symbol: h.symbol ?? '', isin: h.isin ?? '', name: h.name ?? '' })),
   )
+
+  // Fetch 30d history for sparklines
+  const historyRefsJson = JSON.stringify(
+    holdings
+      .filter(h => !isLeftover(h))
+      .map(h => ({ name: h.name, symbol: h.symbol, isin: h.isin, units: h.units, buy_price: h.buy_price, type: h.type }))
+  )
+  useEffect(() => {
+    if (historyRefsJson === '[]') return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const payload = { holdings: JSON.parse(historyRefsJson), range: '1y' }
+        console.log('Fetching Portfolio history with payload:', payload)
+        const resp = await fetch(`${BACKEND_URL}/api/insights/portfolio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!resp.ok) {
+          console.error('Portfolio history fetch failed with status:', resp.status)
+          return
+        }
+        const json = await resp.json()
+        if (cancelled) return
+        const series = json?.prices?.series ?? []
+        const newHistory: Record<string, number[]> = {}
+        series.forEach((s: any) => {
+          const nums = (s.values || []).filter((v: any): v is number => v !== null)
+          newHistory[s.ticker] = nums.slice(-30)
+        })
+        console.log('Portfolio history received and mapped:', newHistory)
+        setPriceHistory(newHistory)
+      } catch (err) {
+        console.error('Error fetching portfolio history:', err)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [historyRefsJson])
+
   useEffect(() => {
     if (refsJson === '[]') return
     let cancelled = false
@@ -763,10 +846,11 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                     <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500">Stock</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Type</th>
                     <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Units</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Buy Price</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Live Rate</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Invested</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">P&L</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Buy Price</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Live Rate</th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">30d Trend</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Invested</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">P&amp;L</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -815,6 +899,16 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                               )}
                             </div>
                           ) : <span className="text-xs text-gray-400 italic" title="No market price was found for this holding">No price</span>}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {(() => {
+                            const raw = h.symbol?.trim() || liveTickers[priceKey(h)] || ''
+                            const t = raw.toUpperCase()
+                            const tBase = t.replace(/\.(NS|BO)$/, '')
+                            const vals = priceHistory[t] || priceHistory[`${tBase}.NS`] || priceHistory[`${tBase}.BO`] || priceHistory[tBase] || []
+                            const trendIsUp = vals.length >= 2 ? vals[vals.length - 1] >= vals[0] : true
+                            return <MiniSparkline values={vals} positive={trendIsUp} />
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-right text-sm text-gray-600 tabular-nums">{fmtCur(invested)}</td>
                         <td className="px-4 py-3.5 text-right">
