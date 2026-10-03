@@ -69,18 +69,20 @@ const navItems: NavItem[] = [
   },
 ]
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  activePage?: string
+  onNavigate?: (page: string) => void
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate }) => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
-  const { pathname } = useLocation()
-  const [activeItem, setActiveItem] = useState(
-    navItems.find((item) => item.path === pathname)?.id ?? 'dashboard'
-  )
+  const activeItem = activePage
+  const setActiveItem = (id: string) => onNavigate?.(id)
 
   const selectItem = (item: NavItem) => {
     setActiveItem(item.id)
-    if (item.path) navigate(item.path)
   }
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? 'U'

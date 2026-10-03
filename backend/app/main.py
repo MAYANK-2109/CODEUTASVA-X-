@@ -17,6 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers
+from app.portfolio.router import router as portfolio_router  # noqa: E402
+app.include_router(portfolio_router)
+
 
 app.include_router(router)
 
