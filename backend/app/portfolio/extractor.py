@@ -245,7 +245,7 @@ def _clean_date(val: Any) -> str | None:
     return s.split(" ")[0] if " " in s else s
 
 
-def _infer_type(name: str) -> str:
+def _infer_type(name: str, isin: str = "") -> str:
     n = name.upper()
     if any(k in n for k in ("FUND", "SCHEME", "DIRECT", "GROWTH", "DIVIDEND", "SIP", "MF", "MUTUAL")):
         return "MF"
@@ -253,6 +253,9 @@ def _infer_type(name: str) -> str:
         return "ETF"
     if any(k in n for k in ("BOND", "NCD", "DEBENTURE", "GSEC", "T-BILL", "GOI")):
         return "BOND"
+    # ISINs starting INF are fund units; held in a demat account they are ETFs.
+    if isin.upper().startswith("INF"):
+        return "ETF"
     return "STOCK"
 
 
@@ -286,14 +289,15 @@ KEYWORDS: dict[str, list[str]] = {
     ],
     "current_price": [
         "ltp", "last price", "current price", "market price", "close price",
-        "cmp", "live price", "cur price", "current rate", "market rate"
+        "closing price", "cmp", "live price", "cur price", "current rate", "market rate"
     ],
     "invested_value": [
         "invested value", "invested amt", "invested amount", "total cost",
         "cost value", "buy value", "invested"
     ],
     "current_value": [
-        "current value", "market value", "present value", "cur value", "total value"
+        "current value", "market value", "present value", "cur value", "total value",
+        "closing value"
     ],
 }
 
@@ -310,7 +314,8 @@ def _find_header_row(rows: list[list]) -> tuple[int, dict[str, int]]:
     for idx, row in enumerate(rows[:30]):
         if not row:
             continue
-        row_str = [str(c).lower().strip() if c is not None else "" for c in row]
+        # PDF table cells wrap ("Closing\nprice"), so collapse whitespace first.
+        row_str = [" ".join(str(c).lower().split()) if c is not None else "" for c in row]
         if not any(row_str):
             continue
 
@@ -380,7 +385,7 @@ def _extract_from_tables(tables: list[list[list]]) -> list[dict[str, Any]]:
                     return None
                 return row[idx]
 
-            raw_name = str(gcell("name") or "").strip()
+            raw_name = " ".join(str(gcell("name") or "").split())
             raw_sym = str(gcell("symbol") or "").strip()
 
             name = raw_name if raw_name else raw_sym
@@ -424,7 +429,7 @@ def _extract_from_tables(tables: list[list[list]]) -> list[dict[str, Any]]:
                 "name": name,
                 "symbol": symbol,
                 "isin": isin,
-                "type": _infer_type(name),
+                "type": _infer_type(name, isin),
                 "buy_date": _clean_date(gcell("buy_date")),
                 "units": units,
                 "buy_price": buy_price,
@@ -464,8 +469,40 @@ _GROWW_PATTERN = re.compile(
 )
 
 
-def _extract_from_text(text: str) -> list[dict[str, Any]]:
+_NAME_THEN_ISIN = re.compile(r"^(?P<name>.+?)\s+(?P<isin>IN[A-Z0-9]{10})\s+(?P<rest>[-\d,.\s()₹]+)$")
+
+
+def _extract_isin_rows(text: str) -> list[dict[str, Any]]:
+    """Statement lines of the form: name, ISIN, quantity, average price,
+    buy value, closing price, ... (the layout of a broker holdings statement)."""
     holdings: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        m = _NAME_THEN_ISIN.match(line.strip())
+        if not m:
+            continue
+        name = m.group("name").strip()
+        numbers = [_clean_number(tok) for tok in m.group("rest").split()]
+        numbers = [n for n in numbers if n is not None]
+        if _is_ignorable_row(name) or len(numbers) < 2:
+            continue
+        isin = m.group("isin").upper()
+        holdings.append({
+            "name": name,
+            "symbol": "",
+            "isin": isin,
+            "type": _infer_type(name, isin),
+            "buy_date": None,
+            "units": numbers[0],
+            "buy_price": numbers[1],
+            "current_price": numbers[3] if len(numbers) >= 4 else None,
+        })
+    return holdings
+
+
+def _extract_from_text(text: str) -> list[dict[str, Any]]:
+    holdings = _extract_isin_rows(text)
+    if holdings:
+        return holdings
 
     # 1. Groww / Modern Broker text pattern (name + qty + avg price + ltp)
     for m in _GROWW_PATTERN.finditer(text):
@@ -498,7 +535,7 @@ def _extract_from_text(text: str) -> list[dict[str, Any]]:
             "name": name,
             "symbol": resolve_symbol(name),
             "isin": m.group("isin").upper(),
-            "type": _infer_type(name),
+            "type": _infer_type(name, m.group("isin")),
             "buy_date": None,
             "units": _clean_number(m.group("units")),
             "buy_price": _clean_number(m.group("price")),
@@ -566,7 +603,7 @@ def _sheet_to_rows(ws_rows: list[list]) -> list[dict[str, Any]]:
                 return None
             return row[idx]
 
-        raw_name = str(gcell("name") or "").strip()
+        raw_name = " ".join(str(gcell("name") or "").split())
         raw_sym = str(gcell("symbol") or "").strip()
 
         name = raw_name if raw_name else raw_sym
@@ -609,7 +646,7 @@ def _sheet_to_rows(ws_rows: list[list]) -> list[dict[str, Any]]:
             "name": name,
             "symbol": symbol,
             "isin": isin,
-            "type": _infer_type(name),
+            "type": _infer_type(name, isin),
             "buy_date": _clean_date(gcell("buy_date")),
             "units": units,
             "buy_price": buy_price,

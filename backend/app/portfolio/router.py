@@ -122,6 +122,43 @@ class HoldingUpdate(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
+def _enrich(holdings: list[dict]) -> None:
+    """Give each extracted holding a trading symbol and the latest market price.
+
+    Statements usually identify a holding by ISIN or by name only. The symbol
+    is looked up from those, so the review table shows a ticker and the ISIN
+    is kept only as a hidden match key. The latest price replaces the
+    statement's closing price when one is available.
+    """
+    from app.ingestion.prices import get_latest_prices
+    from app.tools import resolver
+
+    options: list[list[str]] = []
+    for h in holdings:
+        try:
+            options.append(resolver.candidates(h.get("symbol") or "", h.get("isin") or "", h.get("name") or ""))
+        except Exception:
+            options.append([])
+
+    try:
+        prices, _ = get_latest_prices(sorted({o[0] for o in options if o}))
+        missing = sorted({t for o in options if o and o[0] not in prices for t in o[1:]})
+        if missing:
+            prices = {**prices, **get_latest_prices(missing)[0]}
+    except Exception:
+        prices = {}
+
+    for h, tried in zip(holdings, options):
+        ticker = next((t for t in tried if t in prices), tried[0] if tried else None)
+        if ticker and not h.get("symbol"):
+            h["symbol"] = ticker.rsplit(".", 1)[0]
+        if ticker in prices:
+            h["current_price"] = prices[ticker]
+        # Last resort so the review table has a number to edit: the buy price.
+        if h.get("current_price") is None and h.get("buy_price") is not None:
+            h["current_price"] = h["buy_price"]
+
+
 @router.post("/upload-pdf")
 async def upload_pdf(
     file: UploadFile = File(...),
@@ -160,29 +197,7 @@ async def upload_pdf(
     finally:
         del file_bytes  # Free memory immediately
 
-    # ── Enrich holdings with live market prices if current_price is missing ──
-    from app.tools.market import to_ticker
-    tickers_to_query = [
-        to_ticker(h["symbol"])
-        for h in holdings
-        if h.get("symbol") and h.get("current_price") is None
-    ]
-    if tickers_to_query:
-        try:
-            from app.ingestion.prices import get_latest_prices
-            live_prices, _ = get_latest_prices(tickers_to_query)
-            for h in holdings:
-                if h.get("current_price") is None and h.get("symbol"):
-                    t = to_ticker(h["symbol"])
-                    if t in live_prices:
-                        h["current_price"] = live_prices[t]
-        except Exception:
-            pass
-
-    # If current_price is still None, fallback to buy_price to avoid null display
-    for h in holdings:
-        if h.get("current_price") is None and h.get("buy_price") is not None:
-            h["current_price"] = h["buy_price"]
+    _enrich(holdings)
 
     # Return holdings *and* the verified user_id so the frontend can persist
     # them directly via the authenticated Supabase client

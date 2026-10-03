@@ -18,6 +18,13 @@ NAME_NOISE = re.compile(
     re.IGNORECASE,
 )
 
+# ISINs the search service does not know. Each was confirmed by matching the
+# ticker's price to the closing price printed on a broker statement.
+KNOWN_ISINS = {
+    "INF204KB17I5": "GOLDBEES.NS",   # Nippon India ETF Gold BeES
+    "INF200KA16D8": "SETFGOLD.NS",   # SBI ETF Gold
+}
+
 _lock = threading.Lock()
 _found: dict[str, str] | None = None
 _missed: dict[str, float] = {}
@@ -48,7 +55,7 @@ def search(query: str) -> str | None:
     query = query.strip()
     if not query:
         return None
-    known = _load().get(query)
+    known = KNOWN_ISINS.get(query) or _load().get(query)
     if known:
         return known
     if time.time() - _missed.get(query, 0) < MISS_TTL_SECONDS:

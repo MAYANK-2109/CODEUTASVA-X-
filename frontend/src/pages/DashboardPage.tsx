@@ -271,6 +271,29 @@ const DashboardPage: React.FC = () => {
 
         if (!error && holdings && holdings.length > 0) {
           foundUserHoldings = true
+
+          // Latest market prices, matched by symbol, ISIN or name. A holding
+          // the backend cannot price keeps the price saved with it.
+          let live: Record<string, number> = {}
+          try {
+            const res = await fetch(`${backendUrl}/api/prices`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                holdings: holdings.map((h) => ({
+                  key: String(h.id),
+                  symbol: h.symbol ?? '',
+                  isin: h.isin ?? '',
+                  name: h.name ?? '',
+                })),
+              }),
+            })
+            if (res.ok) live = (await res.json()).prices ?? {}
+          } catch {
+            // Saved prices are used below.
+          }
+          const liveCount = holdings.filter((h) => live[String(h.id)] != null).length
+
           const invested = holdings.reduce(
             (acc, h) => acc + (Number(h.units) || 0) * (Number(h.buy_price) || 0),
             0
@@ -279,7 +302,7 @@ const DashboardPage: React.FC = () => {
             (acc, h) =>
               acc +
               (Number(h.units) || 0) *
-              (Number(h.current_price) || Number(h.buy_price) || 0),
+              (live[String(h.id)] ?? (Number(h.current_price) || Number(h.buy_price) || 0)),
             0
           )
           const profit = current - invested
@@ -292,7 +315,7 @@ const DashboardPage: React.FC = () => {
             totalProfitPercent: profitPct,
             totalStocks: holdings.length,
             isCustom: true,
-            lastUpdated: 'Just now',
+            lastUpdated: liveCount > 0 ? `${liveCount} of ${holdings.length} live` : 'Saved prices',
           })
         }
       }
