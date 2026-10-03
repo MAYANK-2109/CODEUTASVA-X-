@@ -7,6 +7,8 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-dotenv>=1.0",
+    "yfinance>=1.7.0",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
@@ -18,3 +20,6 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
