@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import PortfolioPage from './pages/PortfolioPage'
+import AccountSettingsPage from './pages/AccountSettingsPage'
 
 function App() {
   return (
@@ -28,6 +29,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <PortfolioPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <AccountSettingsPage />
               </ProtectedRoute>
             }
           />
