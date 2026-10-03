@@ -1,6 +1,8 @@
 import React, { useState, useRef, useMemo } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import EvidenceTrail from './EvidenceTrail'
+import type { TrailDecision, TrailStep } from './EvidenceTrail'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,9 @@ export interface Answer {
   hedges: Hedge[]
   action: 'hedge' | 'monitor' | 'no_hedge' | 'none'
   forecast?: Forecast | null
+  // Why the recommendation was made, and the steps of the analysis behind it.
+  decision?: TrailDecision | null
+  trail?: TrailStep[]
   gaps: string[]
   writer: 'llm' | 'template'
 }
@@ -825,6 +830,16 @@ export const AITerminal: React.FC<{
                         )
                       )
                     })}
+                  </div>
+
+                  {/* Evidence trail: why this was recommended, step by step; open by default */}
+                  <div className="ai-terminal-trail">
+                    <EvidenceTrail
+                      trail={answer.trail}
+                      decision={answer.decision}
+                      evidence={answer.evidence}
+                      steps={steps}
+                    />
                   </div>
 
                   {/* Evidence Drawer */}

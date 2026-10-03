@@ -39,6 +39,14 @@ vector_store.warm_up_in_background()
 from app.tools import gdelt  # noqa: E402
 gdelt.start_background_scan()
 
+from app.tools import market  # noqa: E402
+
+
+@app.on_event("startup")
+def warm_prices() -> None:
+    """Runs when the server starts, not when a test imports the app."""
+    market.warm_up_in_background()
+
 
 @app.get("/health")
 def health() -> dict[str, str]:

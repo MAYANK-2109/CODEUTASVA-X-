@@ -58,7 +58,7 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
   const { solution } = alert
   // Alerts that need attention open with their steps; the rest show the action and expand on request.
   const [open, setOpen] = useState(NEEDS_ATTENTION.includes(alert.severity) || Boolean(alert.hedge?.drill))
-  const [showTrail, setShowTrail] = useState(false)
+  const [showTrail, setShowTrail] = useState(true)
   const trail = alert.trail ?? []
   return (
     <li className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
@@ -123,7 +123,7 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
           <button
             onClick={() => setShowTrail((value) => !value)}
             aria-expanded={showTrail}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-groww-text-secondary hover:text-groww-green"
+            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-groww-green hover:text-groww-green-dark"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M9 6h11M9 12h11M9 18h11" />
@@ -131,7 +131,7 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
               <circle cx="4" cy="12" r="1.2" />
               <circle cx="4" cy="18" r="1.2" />
             </svg>
-            {showTrail ? 'Hide evidence trail' : `Evidence trail: how this was worked out (${trail.length} steps)`}
+            {showTrail ? `Evidence trail: how this was worked out (${trail.length} steps) · hide` : `Show evidence trail (${trail.length} steps)`}
           </button>
           {showTrail && (
             <ol className="mt-2 flex flex-col">

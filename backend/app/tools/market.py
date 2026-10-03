@@ -1,6 +1,8 @@
 import hashlib
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,6 +63,8 @@ SECTORS = {
     "TATAGOLD": "Commodities", "SILVERCASE": "Commodities", "NETFSILVER": "Commodities",
 }
 
+DOWNLOAD_DEADLINE_SECONDS = 30
+_downloads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="prices")
 _memory: dict[str, tuple[float, object]] = {}
 
 
@@ -131,13 +135,20 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
     ], "sample"
 
 
-def _download(tickers: list[str], **kwargs) -> pd.DataFrame:
+def _fetch(tickers: list[str], **kwargs) -> pd.DataFrame:
     closes = yf.download(
         tickers, progress=False, auto_adjust=True, timeout=15, **kwargs
     )["Close"]
     if isinstance(closes, pd.Series):
         closes = closes.to_frame(tickers[0])
     return closes.dropna(how="all")
+
+
+def _download(tickers: list[str], **kwargs) -> pd.DataFrame:
+    """Closing prices from Yahoo Finance, abandoned after a deadline. The
+    source sometimes never answers, and a caller must not wait on it for ever:
+    a TimeoutError here is handled like any other failed download."""
+    return _downloads.submit(_fetch, tickers, **kwargs).result(timeout=DOWNLOAD_DEADLINE_SECONDS)
 
 
 def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
@@ -295,3 +306,17 @@ def market_trend(indices: list[dict]) -> dict | None:
     else:
         label = "Sideways"
     return {"label": label, "detail": f"Nifty 50 {change:+.1f}% over one month"}
+
+
+def warm_up_in_background() -> None:
+    """Fetch the sample portfolio's price history and the cross-asset history
+    once at startup, so the first question does not wait for 13 years of prices."""
+    def warm() -> None:
+        try:
+            sample = json.loads(SAMPLE_PORTFOLIO.read_text())["holdings"]
+            get_history([h["ticker"] for h in sample])
+            get_cross_assets()
+        except Exception:
+            pass  # the first request will simply fetch what it needs
+
+    threading.Thread(target=warm, daemon=True, name="warm-prices").start()
