@@ -15,7 +15,7 @@ from app.tools import vector_store
 from app.tools.events import tokenize
 from app.tools.market import CROSS_ASSETS, NIFTY, get_cross_assets, get_history, get_macro
 from app.tools.weather import (
-    GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, get_weather_outlook, holdings_at, sites_named_in,
+    GALE_GUST_KMH, HEAT_C, HEAVY_RAIN_MM, LOCATIONS, get_weather_outlook, holdings_at, sites_named_in,
 )
 
 HORIZON_SESSIONS = 5
@@ -408,7 +408,7 @@ def historical(state: State) -> dict:
     return {
         "findings": {"historical": {"events": events, "per_holding": per_holding, "nifty_mean": nifty_mean,
                                     "cross_assets": cross_assets, "cross_row": cross_row,
-                                    "event_rows": event_rows}},
+                                    "event_rows": event_rows, "search": search}},
         "evidence": rows,
         "gaps": gaps,
         "status": "done" if events else "degraded",
@@ -466,7 +466,7 @@ def risk(state: State) -> dict:
 
     returns = metrics.daily_returns(closes)
     var = metrics.historical_var(metrics.portfolio_returns(returns, weights))
-    var_5d = None
+    var_5d = var_row = beta_row = None
     if var:
         var_5d = var[0] * math.sqrt(HORIZON_SESSIONS) * total
         rows.append(
@@ -475,6 +475,7 @@ def risk(state: State) -> dict:
                      f"{pct(var[1], signed=False)} ({inr(var[1] * total)}); {HORIZON_SESSIONS}-day 95% VaR "
                      f"{inr(var_5d)} by square-root-of-time scaling",
                      f"Historical simulation, last {len(returns)} sessions"))
+        var_row = rows[-1]["id"]
 
     betas = {t: metrics.beta(returns[t], returns[NIFTY]) for t in weights}
     betas = {t: b for t, b in betas.items() if b is not None}
@@ -482,6 +483,7 @@ def risk(state: State) -> dict:
     if portfolio_beta is not None:
         rows.append(evidence("R", len(rows) + 1, f"Portfolio beta to Nifty 50: {portfolio_beta:.2f}",
                              f"Daily returns, last {len(returns)} sessions"))
+        beta_row = rows[-1]["id"]
 
     # Per-holding risk, so "which holding is riskiest" has evidence behind it.
     volatility = {t: float(returns[t].std()) * math.sqrt(metrics.TRADING_DAYS_1Y)
@@ -546,7 +548,8 @@ def risk(state: State) -> dict:
         "findings": {
             "risk": {
                 "total": total, "weights": weights, "sectors": sector_rank, "var": var, "var_5d": var_5d,
-                "beta": portfolio_beta, "scenario": scenario,
+                "beta": portfolio_beta, "scenario": scenario, "var_row": var_row, "beta_row": beta_row,
+                "sessions": len(returns),
             }
         },
         "evidence": rows,
@@ -558,6 +561,10 @@ def risk(state: State) -> dict:
 
 
 # --------------------------------------------------------------------------- hedging
+
+
+HEDGE_RULE = (f"A hedge is recommended only when the loss expected from comparable past events is larger than "
+              f"the {HORIZON_SESSIONS}-day 95% VaR, which is the loss this portfolio already risks in an ordinary week.")
 
 
 @agent("hedging")
@@ -578,8 +585,12 @@ def hedging(state: State) -> dict:
         rows.append(evidence("G", len(rows) + 1, claim, "Hedging rules on risk agent output"))
         return rows[-1]["id"]
 
+    sizing: list[str] = []
+    uses = [i for i in ((scenario or {}).get("row"), risk_view.get("var_row")) if i]
     if scenario is None:
         action = "monitor"
+        comparison = ("No comparable past events were found, so there is no expected loss to compare with the "
+                      "VaR. The portfolio is monitored, not hedged.")
         claim = "No event scenario could be built, so no event-specific hedge is sized."
         if full_notional:
             claim += (f" For reference, shorting {inr(full_notional)} of Nifty 50 futures "
@@ -587,6 +598,8 @@ def hedging(state: State) -> dict:
         add(claim)
     elif scenario["pnl"] >= 0:
         action = "no_hedge"
+        comparison = (f'Comparable events moved a portfolio weighted like this one {pct(scenario["mean"])} on '
+                      f"average, a gain, so there is no expected loss to hedge.")
         claim = (f'Comparable events were on average favourable for this portfolio ({pct(scenario["mean"])}), '
                  "so no hedge is recommended on expected value.")
         worst_loss = -scenario["worst"][0] * total
@@ -600,10 +613,14 @@ def hedging(state: State) -> dict:
         offset = -full_notional * nifty_mean if index_helps else 0.0
         if budget and loss <= budget:
             action = "monitor"
+            comparison = (f"The expected event loss of {inr(loss)} is smaller than the {HORIZON_SESSIONS}-day 95% "
+                          f"VaR of {inr(budget)}, so no hedge is needed.")
             add(f"Expected event loss {inr(loss)} is within the {HORIZON_SESSIONS}-day 95% VaR of {inr(budget)}, "
                 "which is normal risk for this portfolio. Monitor rather than hedge.")
         else:
             action = "hedge"
+            comparison = (f"The expected event loss of {inr(loss)} is larger than the {HORIZON_SESSIONS}-day 95% VaR"
+                          + (f" of {inr(budget)}" if budget else "") + ", so a hedge is sized.")
             add(f"Expected event loss {inr(loss)} exceeds the {HORIZON_SESSIONS}-day 95% VaR"
                 + (f" of {inr(budget)}" if budget else "") + ", so a hedge is warranted.")
 
@@ -613,10 +630,15 @@ def hedging(state: State) -> dict:
                 + f"{inr(full_notional)} of Nifty 50 futures (beta {beta_value:.2f} x portfolio value). "
                 f"With the index averaging {pct(nifty_mean)} in comparable events this offsets about "
                 f"{inr(offset)}, leaving roughly {inr(max(loss - offset, 0))} of stock-specific loss")
+            sizing.append(f"Index hedge = beta {beta_value:.2f} x portfolio value {inr(total)} = "
+                          f"{inr(full_notional)}. It is offered because the Nifty fell {pct(-nifty_mean, signed=False)} on "
+                          f"average in the comparable events, which would offset about {inr(offset)}.")
             hedges.append({"instrument": "Nifty 50 futures", "side": "short",
                            "notional": round(full_notional), "expected_offset": round(offset),
                            "optional": action != "hedge", "evidence": hedge_id})
         elif full_notional is not None:
+            sizing.append("No index hedge: the Nifty did not fall on average in the comparable events, so "
+                          "shorting it would not offset a loss that is specific to these stocks.")
             add(f"An index hedge would not have helped: the Nifty 50 averaged {pct(nifty_mean or 0)} in "
                 "comparable events, so the expected loss is stock-specific")
 
@@ -626,6 +648,9 @@ def hedging(state: State) -> dict:
             vulnerable_loss = -sum(c["pnl"] for c in vulnerable)
             trim = min(1.0, (residual - budget) / vulnerable_loss)
             names = "; ".join(f'{c["name"]} sell {inr(c["value"] * trim)}' for c in vulnerable[:3])
+            sizing.append(f"Trim = (loss left after the index hedge {inr(residual)} - VaR {inr(budget)}) / loss "
+                          f"expected on the holdings with negative event history {inr(vulnerable_loss)} = "
+                          f"{pct(trim, signed=False)} of each of those holdings.")
             hedge_id = add(
                 f"To bring the remaining loss inside the VaR budget, trim the holdings with negative "
                 f"event history by {pct(trim, signed=False)}: {names}")
@@ -645,8 +670,10 @@ def hedging(state: State) -> dict:
 
     labels = {"hedge": "Hedge recommended", "monitor": "Monitor, no hedge needed",
               "no_hedge": "No hedge recommended", "none": "No hedge sized"}
+    decision = {"action": action, "rule": HEDGE_RULE, "comparison": comparison, "sizing": sizing,
+                "evidence": [*uses, rows[0]["id"]]}
     return {
-        "findings": {"hedging": {"action": action, "hedges": hedges}},
+        "findings": {"hedging": {"action": action, "hedges": hedges, "decision": decision}},
         "evidence": rows,
         "summary": labels[action] + (f" ({len(hedges)} action(s) sized)" if hedges else ""),
     }
@@ -758,7 +785,10 @@ def _template(state: State, rows: list[dict]) -> str:
     return "\n".join(lines) if by_id else lines[0]
 
 
-def _llm_answer(state: State, rows: list[dict], draft: str) -> str | None:
+def _llm_answer(state: State, rows: list[dict], draft: str) -> tuple[str | None, str | None]:
+    """The model's wording if it passes every check, else None and the reason it was not used."""
+    if not llm.available():
+        return None, "No language model key is configured"
     listing = "\n".join(f'[{r["id"]}] {r["claim"]}' for r in rows)
     forecast_ids = _forecast_rows(state)
     text = llm.complete(
@@ -776,14 +806,95 @@ def _llm_answer(state: State, rows: list[dict], draft: str) -> str | None:
         f'Question: {state["query"]}\n\nEvidence:\n{listing}\n\nDraft answer for reference:\n{draft}',
     )
     if not isinstance(text, str) or not text.strip():
-        return None
+        return None, "The language model did not reply"
     known = {r["id"] for r in rows}
     cited = set(re.findall(r"[A-Z]\d+", " ".join(CITATION.findall(text))))
-    if ungrounded_numbers(text, rows) or not cited or not cited <= known:
-        return None
+    invented = ungrounded_numbers(text, rows)
+    if invented:
+        return None, ("The language model's wording was rejected because it contained figures that are not in "
+                      f"the evidence ({', '.join(sorted(invented)[:5])})")
+    if not cited or not cited <= known:
+        return None, "The language model's wording was rejected because its citations did not match the evidence"
     if not set(forecast_ids) <= cited:
-        return None  # wording that leaves the forecast out is not used
-    return text.strip()
+        return None, "The language model's wording was rejected because it left out the forecast"
+    return text.strip(), None
+
+
+TRAIL_TITLES = {
+    "supervisor": "Understood the question", "sentiment": "Read the news mood",
+    "weather_macro": "Checked weather and market conditions", "historical": "Found comparable past events",
+    "risk": "Measured the risk", "hedging": "Decided on a hedge", "synthesiser": "Wrote and checked the answer",
+}
+EVIDENCE_OWNER = {"S": "sentiment", "W": "weather_macro", "M": "weather_macro", "H": "historical",
+                  "R": "risk", "G": "hedging"}
+
+
+def _trail(state: State, rows: list[dict], text: str, problem: str | None) -> list[dict]:
+    """The analysis as ordered steps: what each agent was asked, how it worked it
+    out, which evidence it produced and which earlier evidence it relied on."""
+    plan, findings = state["plan"], state["findings"]
+    said = {entry["agent"]: entry["summary"] for entry in state.get("trace", [])}
+    found = {agent: [r["id"] for r in rows if EVIDENCE_OWNER.get(r["id"][0]) == agent]
+             for agent in TRAIL_TITLES}
+    history, risk_view = findings.get("historical") or {}, findings.get("risk") or {}
+    decision = (findings.get("hedging") or {}).get("decision")
+    scenario = risk_view.get("scenario") or {}
+    negative = sentiment_tool.cutoffs()[1]
+
+    how = {
+        "supervisor": (
+            f"Gemini read the question and picked the scenario from a fixed list of {len(EVENT_TYPES)} event types."
+            if plan["planner"] == "llm" else
+            f"Keyword rules matched the question against {len(EVENT_TYPES)} event types; no language model was used."),
+        "sentiment": (
+            f"Fetched recent headlines from Google News for the scenario and for your holdings, then scored each "
+            f"with {sentiment_tool.backend()}. A score runs from -1 (negative) to +1 (positive); {negative:+.2f} "
+            f"or lower counts as negative."),
+        "weather_macro": (
+            f"Read the 7-day forecast at {len(LOCATIONS)} economic sites from Open-Meteo and compared each day with "
+            f"India Meteorological Department alert levels ({HEAVY_RAIN_MM} mm of rain, {GALE_GUST_KMH} km/h gusts, "
+            f"{HEAT_C} C). Read Brent, USD/INR, India VIX and the Nifty 50 from Yahoo Finance and checked their "
+            f"one-month change against fixed stress levels."),
+        "historical": (
+            f"Searched the library of past events with {history.get('search', 'text search')} for events like this "
+            f"one. For each match, measured the move from the close before the event to {HORIZON_SESSIONS} sessions "
+            f"later, for the Nifty 50, each holding, and crude, gas, gold and the rupee."),
+        "risk": (
+            f"Valued each holding at its latest close. VaR is the loss exceeded on only 5% of the last "
+            f"{risk_view.get('sessions', metrics.TRADING_DAYS_1Y)} sessions at today's weights (historical "
+            f"simulation); beta is measured against the Nifty 50. Each comparable event's moves were then applied "
+            f"to today's weights to get the expected move."),
+        "hedging": HEDGE_RULE,
+        "synthesiser": (
+            "Gemini wrote the wording from the evidence list only. It was accepted after two checks: every figure "
+            "in it appears in the evidence, and every citation points to a real evidence row."
+            if problem is None else
+            f"{problem}, so the answer uses fixed rule-based wording built directly from the evidence rows."),
+    }
+    result = {
+        **said,
+        "supervisor": (f'Scenario: {plan["event_label"]}. News search: "{plan["news_query"]}".' if plan["event_label"]
+                       else "No specific event named, so it is treated as a general question about the portfolio."),
+        "hedging": decision["comparison"] if decision else said.get("hedging", "No hedge could be sized."),
+        "synthesiser": (f"{len(_numbers(text))} figures and {len(set(CITATION.findall(text)))} citations in the "
+                        f"answer, all traced to the {len(rows)} evidence rows."),
+    }
+    uses = {
+        "risk": history.get("event_rows", []),
+        "hedging": [i for i in (scenario.get("row"), risk_view.get("var_row"), risk_view.get("beta_row")) if i],
+        # The rows the answer actually cites, in evidence order.
+        "synthesiser": [r["id"] for r in rows
+                        if r["id"] in set(re.findall(r"[A-Z]\d+", " ".join(CITATION.findall(text))))],
+    }
+    notes = {
+        "supervisor": [f"{TRAIL_TITLES[agent_name]}: {task}" for agent_name, task in plan["subtasks"].items()],
+        "hedging": (decision or {}).get("sizing", []),
+    }
+    return [
+        {"agent": name, "title": title, "how": how[name], "result": result.get(name, "No result."),
+         "evidence": found[name], "uses": uses.get(name, []), "notes": notes.get(name, [])}
+        for name, title in TRAIL_TITLES.items()
+    ]
 
 
 @agent("synthesiser")
@@ -793,7 +904,7 @@ def synthesiser(state: State) -> dict:
     rows = sorted(rows, key=lambda r: (order.get(r["id"][0], 9), int(r["id"][1:])))
 
     draft = _template(state, rows)
-    written = _llm_answer(state, rows, draft)
+    written, problem = _llm_answer(state, rows, draft)
     gaps = list(state.get("gaps", []))
     scenario = (state["findings"].get("risk") or {}).get("scenario")
     if scenario:
@@ -811,6 +922,8 @@ def synthesiser(state: State) -> dict:
             "hedges": state["findings"].get("hedging", {}).get("hedges", []),
             "action": state["findings"].get("hedging", {}).get("action", "none"),
             "forecast": _forecast(state),
+            "decision": state["findings"].get("hedging", {}).get("decision"),
+            "trail": _trail(state, rows, written or draft, problem),
             "gaps": gaps,
             "writer": "llm" if written else "template",
             "planner": state["plan"]["planner"],

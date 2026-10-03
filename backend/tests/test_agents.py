@@ -194,11 +194,72 @@ def test_pipeline_survives_missing_prices(offline):
 
 def test_ungrounded_llm_wording_is_rejected(offline, monkeypatch):
     offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    monkeypatch.setattr(nodes.llm, "available", lambda: True)
     monkeypatch.setattr(nodes.llm, "complete", lambda system, user, schema=None: (
         None if schema else "**Bottom line:** you will lose 73% [R1]."))
     answer = answer_for("What does a cyclone do to my portfolio?", HOLDING)
     assert answer["writer"] == "template"
     assert "73%" not in answer["text"]
+    # The trail says why the model's wording was thrown away.
+    written = answer["trail"][-1]
+    assert "figures that are not in the evidence (73)" in written["how"] and "rule-based wording" in written["how"]
+
+
+def test_evidence_trail_walks_through_every_agent_in_order(offline):
+    offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    answer = answer_for("What does a cyclone do to my portfolio?", HOLDING)
+    trail = answer["trail"]
+    assert [step["agent"] for step in trail] == graph.AGENTS
+    assert all(step["title"] and step["how"] and step["result"] for step in trail)
+
+    known = {e["id"] for e in answer["evidence"]}
+    by_agent = {step["agent"]: step for step in trail}
+    # Every evidence row belongs to exactly one step, and steps only lean on rows that exist.
+    produced = [i for step in trail for i in step["evidence"]]
+    assert sorted(produced) == sorted(known)
+    assert all(set(step["uses"]) <= known for step in trail)
+    assert all(i.startswith("H") for i in by_agent["historical"]["evidence"])
+    assert by_agent["risk"]["uses"] and all(i.startswith("H") for i in by_agent["risk"]["uses"])
+    assert all(i.startswith("R") for i in by_agent["hedging"]["uses"])
+    assert "Keyword rules" in by_agent["supervisor"]["how"] and "cyclone" in by_agent["supervisor"]["result"]
+    assert len(by_agent["supervisor"]["notes"]) == 5                    # the five tasks handed out
+    assert "No language model key" in by_agent["synthesiser"]["how"]
+    cited = set(re.findall(r"[A-Z]\d+", " ".join(nodes.CITATION.findall(answer["text"]))))
+    assert set(by_agent["synthesiser"]["uses"]) == cited
+
+
+def test_decision_states_the_rule_and_the_comparison_behind_it(offline):
+    offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    hedge = answer_for("What does a cyclone do to my portfolio?", HOLDING)["decision"]
+    assert hedge["action"] == "hedge" and "larger than the 5-day 95% VaR" in hedge["comparison"]
+    assert "only when the loss expected" in hedge["rule"]
+    assert any(note.startswith("Index hedge = beta") for note in hedge["sizing"])
+    assert not any("fell -" in note for note in hedge["sizing"])       # a fall is stated as a positive size
+    assert any(note.startswith("Trim = ") for note in hedge["sizing"])
+    assert hedge["evidence"][-1] == "G1" and all(i[0] in "RG" for i in hedge["evidence"])
+
+    offline(synthetic_closes(event_drop=0.0, market_drop=0.0))
+    calm = answer_for("What does a cyclone do to my portfolio?", HOLDING)["decision"]
+    assert calm["action"] in ("monitor", "no_hedge") and "hedge" in calm["comparison"]
+
+    offline(synthetic_closes())
+    general = answer_for("Is my portfolio risky right now?", HOLDING)["decision"]
+    assert general["action"] == "monitor" and "No comparable past events" in general["comparison"]
+
+    offline(None)   # no prices: nothing to decide, and the trail still has all seven steps
+    blind = answer_for("What does a cyclone do to my portfolio?", HOLDING)
+    assert blind["decision"] is None and len(blind["trail"]) == 7
+
+
+def test_trail_names_the_model_when_its_wording_is_used(offline, gemini):
+    offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
+    plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
+    text = "**Bottom line:** a hedge is recommended [G1].\n- Forecast for your holdings: Alpha Refining falls [R7]."
+    gemini([plan, gemini_reply(text)])
+    trail = {step["agent"]: step for step in answer_for("Big storm coming?", HOLDING)["trail"]}
+    assert trail["supervisor"]["how"].startswith("Gemini read the question")
+    assert "accepted after two checks" in trail["synthesiser"]["how"]
+    assert trail["synthesiser"]["uses"] == ["R7", "G1"]
 
 
 def test_chat_endpoint_streams_ndjson(offline):

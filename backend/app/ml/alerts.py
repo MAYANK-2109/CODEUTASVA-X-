@@ -18,7 +18,7 @@ import numpy as np
 from app.ingestion.news import get_news, names_holding
 from app.ml import impact, solutions
 from app.ml.features import FALL_SIZE, FEATURES, HORIZON, SHOCK_Z, abnormal_returns, risk_features
-from app.ml.radar import radar_alerts
+from app.ml.radar import PRICED_SESSIONS, radar_alerts
 from app.risk import metrics
 from app.tools import sentiment as sentiment_tool
 from app.tools.market import NIFTY, get_history, get_macro, normalise_holdings
@@ -47,14 +47,22 @@ def _pct(fraction: float, digits: int = 1) -> str:
     return f"{abs(fraction) * 100:.{digits}f}%"
 
 
+def _step(title: str, finding: str, method: str | None = None) -> dict:
+    """One step of an alert's evidence trail: what was found, and how."""
+    return {"title": title, "finding": finding, "method": method}
+
+
 def _alert(severity: str, category: str, key: str, title: str, detail: str, solution: dict, basis: str,
-           holding: str | None = None, hedge: dict | None = None, recommendation: str | None = None) -> dict:
+           holding: str | None = None, hedge: dict | None = None, recommendation: str | None = None,
+           trail: list[dict | None] | None = None) -> dict:
+    # The trail runs from the signal to the decision; the decision is always its last step.
+    steps = [s for s in trail or [] if s] + [_step("How the action was chosen", solution["why"])]
     return {
         "id": hashlib.sha1(f"{category}|{key}".encode()).hexdigest()[:12],
         "severity": severity, "category": category, "holding": holding,
         "title": title, "detail": detail, "solution": solution,
         "recommendation": recommendation or solutions.text(solution), "basis": basis,
-        "hedge": hedge,
+        "hedge": hedge, "trail": steps,
     }
 
 
@@ -82,6 +90,29 @@ def _implied_ratio() -> float:
 def _protect(p: dict, score: dict, returns, total: float) -> dict:
     return solutions.protect_or_trim(p, score, _annual_volatility(returns, p["ticker"]), total, _implied_ratio(),
                                      impact.model()["fall"]["base_rate"])
+
+
+ABNORMAL_METHOD = ("Abnormal return = the stock's return minus beta x the Nifty 50's return, with beta measured "
+                   "over 250 sessions, divided by the standard deviation of the last 60 sessions. Yahoo Finance "
+                   "closing prices.")
+
+
+def _impact_step(score: dict | None) -> dict:
+    """What the impact model says about one holding, or that it could not score it."""
+    trained = impact.model()
+    if not score or not trained:
+        return _step("What the impact model says",
+                     "The model could not score this holding: its macro inputs were unavailable or the holding has "
+                     "too little price history.")
+    fall = trained["fall"]
+    return _step(
+        "What the impact model says",
+        f'Chance of a fall of {_pct(FALL_SIZE, 0)} or more in the next {HORIZON} sessions: {_pct(score["fall"], 0)}. '
+        f'The model flags a holding at {_pct(fall["elevated_cutoff"], 0)} or more, so this one is '
+        f'{"flagged" if score["elevated"] else "not flagged"}. Its {HORIZON}-day downside is '
+        f'-{_pct(score["downside"])}, against a usual -{_pct(score["usual_downside"])}.',
+        f"LightGBM trees on price history, India VIX, Brent, USD/INR, sector and weather alert days. AUC "
+        f"{fall['auc']} on {trained['test_period']}; price history alone {fall['auc_by_data_used']['price history']}.")
 
 
 def _today(positions: list[dict], closes) -> dict[str, dict]:
@@ -134,6 +165,21 @@ def _price_alerts(positions: list[dict], closes, total: float, today: dict, scor
                 f'{p["name"]} {"fell" if fell else "rose"} {_pct(move)} on {day}',
                 f"That is {abs(z):.1f} times its usual daily move beyond the market.{size_note}",
                 solution, pattern, p["name"],
+                trail=[
+                    _step("What was detected",
+                          f'{p["name"]} {"fell" if fell else "rose"} {_pct(move)} on {day}. With the market\'s part '
+                          f"removed, that is {abs(z):.1f} times the standard deviation of its recent daily moves.",
+                          ABNORMAL_METHOD),
+                    _step("Why it is an alert",
+                          f"Any move of {SHOCK_Z:.0f} standard deviations or more is flagged. A fall is critical at "
+                          f"3 or more, or at a loss of 5% or more; otherwise it is a warning. A rise is for "
+                          f"information only."
+                          + (f" The holding is {_pct(weight, 0)} of the portfolio; {_pct(LARGE_POSITION, 0)} or more "
+                             f"counts as a large position." if weight >= LARGE_POSITION else "")),
+                    _step("What similar moves did next", pattern,
+                          "Counted across NSE stocks from 2023 onwards, the years the risk model was tested on."),
+                    _impact_step(score) if fell else None,
+                ],
             ))
             continue
 
@@ -154,6 +200,15 @@ def _price_alerts(positions: list[dict], closes, total: float, today: dict, scor
                 f"{_pct(fall['rate_otherwise'], 0)} otherwise. LightGBM on price, macro, sector and weather data: "
                 f"AUC {fall['auc']}; price history alone {fall['auc_by_data_used']['price history']}.",
                 p["name"],
+                trail=[
+                    _impact_step(score),
+                    _step("What flagged days did in testing",
+                          f"On the days the model flagged, a fall of {_pct(FALL_SIZE, 0)} or more followed "
+                          f"{_pct(fall['rate_when_elevated'], 0)} of the time, against {_pct(fall['rate_otherwise'], 0)} "
+                          f"on other days. Most flagged days are still followed by no sharp fall.",
+                          f"Measured on {impact_model['test_days']:,} stock-days from {impact_model['test_period']}, "
+                          f"which the model never saw in training."),
+                ],
             ))
         elif scores is None and shock_model:
             # The impact model's inputs are unavailable, so the price-only model stands in.
@@ -168,12 +223,25 @@ def _price_alerts(positions: list[dict], closes, total: float, today: dict, scor
                     f"{' It is ' + _pct(weight, 0) + ' of your portfolio.' if weight >= LARGE_POSITION else ''}",
                     solutions.solution("watch", f'Avoid adding to {p["name"]} this week', [
                         "The move could be up or down, so this is a reason for caution, not a reason to sell.",
-                        "If a loss here would hurt, ask the assistant to size a hedge."]),
+                        "If a loss here would hurt, ask the assistant to size a hedge."],
+                        why="Rule: this model predicts the size of a move, not its direction, so it can justify "
+                            "caution but not a sale or a hedge."),
                     f"On days scored this high in testing ({test['period']}), a sudden move followed "
                     f"{_pct(test['rate_when_elevated'], 0)} of the time, against {_pct(test['base_rate'], 0)} "
                     f"on a typical day. Model AUC {test['auc']}. Macro data was unavailable, so the price-only "
                     f"model was used.",
                     p["name"],
+                    trail=[
+                        _step("What was detected",
+                              f"The price-only risk model scores {_pct(probability, 0)} for a sudden move in the "
+                              f"next {HORIZON} sessions; it flags scores of {_pct(shock_model['elevated_cutoff'], 0)} "
+                              f"or more.",
+                              "Logistic regression on six price features. The impact model was not used because "
+                              "its macro data was unavailable."),
+                        _step("What flagged days did in testing",
+                              f"A sudden move followed {_pct(test['rate_when_elevated'], 0)} of the time, against "
+                              f"{_pct(test['base_rate'], 0)} on a typical day.", f"Tested on {test['period']}."),
+                    ],
                 ))
     return alerts
 
@@ -206,7 +274,10 @@ def _portfolio_alert(positions: list[dict], closes, total: float, returns, beta:
             [f"Only {_inr(from_market)} of the {_inr(loss)} loss came from the market, so an index hedge would "
              f"not have helped.",
              "The price alerts below name the holdings that drove it, each with its own action.", usual],
-            figures)
+            figures,
+            why=f"Rule: an index hedge is offered only when at least half of the loss came from the market. Here "
+                f"the market explains {_inr(from_market)} of {_inr(loss)}, less than half, so the action is to "
+                f"review the holdings that fell.")
     return [_alert(
         "critical", "portfolio", day,
         f"Portfolio fell {_pct(today)} on {day}",
@@ -214,6 +285,19 @@ def _portfolio_alert(positions: list[dict], closes, total: float, returns, beta:
         f"({_inr(var[0] * total)}).",
         solution,
         f"Historical simulation over the last {len(daily)} sessions at today's weights.",
+        trail=[
+            _step("What was detected", f"The portfolio fell {_pct(today)} on {day}, a loss of about {_inr(loss)}.",
+                  "Each holding's daily return weighted by its share of the portfolio today."),
+            _step("Why it is an alert",
+                  f"The 1-day 95% VaR is {_inr(var[0] * total)}: on 19 days out of 20 the loss should be smaller. "
+                  f"Today's loss is larger, so it is flagged as critical.",
+                  f"Historical simulation over the last {len(daily)} sessions at today's weights."),
+            _step("Where the loss came from",
+                  f"The Nifty 50 moved {market_today * 100:+.1f}% and the portfolio's beta is {beta:.2f}, so about "
+                  f"{_inr(from_market)} of the loss is the market's and {_inr(max(loss - from_market, 0))} is "
+                  f"specific to your holdings.",
+                  "Market part = beta x Nifty 50 return x portfolio value.") if beta else None,
+        ],
     )]
 
 
@@ -249,10 +333,37 @@ def _concentration_alert(positions: list[dict], total: float, returns=None) -> l
         f"portfolio-quarters ({benchmark['managers']} managers, SEC 13F filings). Their median largest "
         f"position is {benchmark['median']:.0f}%; the target is the level nine in ten of them stay under.",
         largest["name"],
+        trail=[
+            _step("What was detected",
+                  f'{largest["name"]} is {share:.0f}% of the portfolio: {_inr(largest["value"])} of {_inr(total)}.',
+                  "Latest closing price x units held, for every priced holding."),
+            _step("Why it is an alert",
+                  f"That is more concentrated than {min(percentile, 99)}% of {benchmark['portfolio_quarters']:,} "
+                  f"institutional portfolio-quarters, whose median largest position is {benchmark['median']:.0f}%. "
+                  f"The alert fires above their 90th percentile, {benchmark['p90']:.0f}%.",
+                  f"Quarterly SEC 13F filings of {benchmark['managers']} managers."),
+            _step("What the sale would change",
+                  f"The 1-day 95% VaR falls from {_inr(var_before * total)} to {_inr(var_after * total)}."
+                  + (" The holdings that move least with it are "
+                     + " and ".join(f"{name} (correlation {value:.2f})" for name, value in partners) + "."
+                     if partners else ""),
+                  "Historical simulation with the holding cut to the target and the proceeds held as cash; "
+                  "correlations of daily returns over the last 250 sessions.") if var_before and var_after else None,
+        ],
     )]
 
 
 # --------------------------------------------------------------------------- news, weather, market
+
+
+def _sentiment_record() -> str | None:
+    """How the sentiment scorer in use did on labelled sentences it had not seen."""
+    key = "finbert" if sentiment_tool.backend() == sentiment_tool.FINBERT else "vader"
+    record = (_trained("sentiment_eval") or {}).get(key, {})
+    if "holdout_accuracy" not in record:
+        return None
+    return (f"On labelled financial sentences it had not seen, it gave the right label "
+            f"{_pct(record['holdout_accuracy'], 0)} of the time (Financial PhraseBank).")
 
 
 def _news_alerts(positions: list[dict], today: dict, scores: dict | None, returns, total: float) -> list[dict]:
@@ -292,7 +403,9 @@ def _news_alerts(positions: list[dict], today: dict, scores: dict | None, return
                  "If the problem is lasting (a regulatory action, a lost contract, a governance failure), cut the "
                  "position; if it is a one-day story, hold. One negative headline is not a reason to sell.",
                  f'Set a price alert at ₹{solutions.stop_price(holding["price"], score["downside"]):,.2f}; a close '
-                 f"below it would be an unusually bad week." if score else None])
+                 f"below it would be an unusually bad week." if score else None],
+                why="Rule: a negative headline leads to a trade only when the impact model also flags the holding. "
+                    "It does not here, so the action is to read the story and decide whether the problem is lasting.")
         alerts.append(_alert(
             "warning", "news", item.get("url") or item["title"],
             f'Negative news on {holding["name"]}',
@@ -301,6 +414,18 @@ def _news_alerts(positions: list[dict], today: dict, scores: dict | None, return
             f"Sentiment score {sentiment:+.2f} from {sentiment_tool.backend()}; headlines at or below "
             f"{negative_cutoff:+.2f} are treated as negative.",
             holding["name"],
+            trail=[
+                _step("What was detected", f'A headline that names {holding["name"]}: "{item["title"]}" '
+                                           f'({item.get("source") or "news"}).',
+                      "Google News search for your holdings over the last 3 days. A headline is kept only if it "
+                      "names the holding."),
+                _step("Why it is an alert",
+                      f"{sentiment_tool.backend()} scored it {sentiment:+.2f} on a scale from -1 (negative) to +1 "
+                      f"(positive). A score of {negative_cutoff:+.2f} or lower counts as negative.",
+                      _sentiment_record()),
+                _step("Has the price reacted", reaction, ABNORMAL_METHOD) if reaction else None,
+                _impact_step(score),
+            ],
         ))
     return alerts
 
@@ -319,13 +444,24 @@ def _market_alert(total: float | None = None, beta: float | None = None) -> list
         solution = solutions.index_hedge(total, beta, vix, "Hold off large new purchases; hedge the index only "
                                                            "if you expect more", caution)
     else:
-        solution = solutions.solution("watch", "Hold off large new purchases", [caution])
+        solution = solutions.solution(
+            "watch", "Hold off large new purchases", [caution],
+            why="Rule: market stress is a reason for caution, not for selling. No hedge is sized because the "
+                "portfolio could not be valued.")
     return [_alert(
         "info", "market", ",".join(flags),
         "Market stress: " + ", ".join(flags),
         "; ".join(f'{i["label"]} {i["value"]:,.2f} ({i["change_1m_pct"]:+.1f}% in a month)' for i in indicators) + ".",
         solution,
         "Yahoo Finance; flags are fixed thresholds on the one-month changes.",
+        trail=[
+            _step("What was detected",
+                  "; ".join(f'{i["label"]} {i["value"]:,.2f}, {i["change_1m_pct"]:+.1f}% in a month' for i in indicators)
+                  + ".", "Yahoo Finance closing levels and their change over 21 sessions."),
+            _step("Why it is an alert",
+                  f"Stress flags raised: {', '.join(flags)}. A flag is raised when India VIX is at 20 or up 20% in a "
+                  f"month, the Nifty 50 is down 5% in a month, Brent is up 10%, or USD/INR is up 2%."),
+        ],
     )]
 
 
@@ -334,10 +470,33 @@ def _market_alert(total: float | None = None, beta: float | None = None) -> list
 
 def _alt_data_alerts(positions: list[dict], closes, scenario: str | None) -> list[dict]:
     """Weather and geopolitical signals with exposure, pricing and a sized hedge."""
-    return [_alert(a["severity"], a["category"], a["key"], a["title"], a["detail"],
-                   solutions.from_hedge(a["hedge"]), a["basis"], hedge=a["hedge"],
-                   recommendation=a["recommendation"])
-            for a in radar_alerts(positions, closes, scenario)]
+    alerts = []
+    for a in radar_alerts(positions, closes, scenario):
+        parts, drill = a["parts"], a["hedge"]["drill"]
+        reach = ("Company assets within 300 km of the site: power stations from the WRI plant database and a "
+                 "curated list of refineries, ports and plants." if parts["kind"] == "weather" else
+                 "Holdings whose price history covers at least two past events of this kind.")
+        priced = ("Not measured: a drill has no real market reaction." if parts["priced"] is None else
+                  f"About {parts['priced'] * 100:.0f}% of the expected loss, judging by how the exposed holdings "
+                  f"moved beyond the market over the last {PRICED_SESSIONS} sessions.")
+        alerts.append(_alert(
+            a["severity"], a["category"], a["key"], a["title"], a["detail"],
+            solutions.from_hedge(a["hedge"]), a["basis"], hedge=a["hedge"], recommendation=a["recommendation"],
+            trail=[
+                _step("What was detected", parts["signal"],
+                      None if drill else "; ".join(parts["sources"])),
+                _step("Which holdings it reaches",
+                      f'{parts["exposed"]}.' if parts["exposed"] else "None of your holdings.", reach),
+                _step("What similar events did", parts["moves"]),
+                _step("How much is already in the price", priced),
+                _step("How far to trust the signal",
+                      "This is a rehearsal, so there is nothing to corroborate." if drill else
+                      f'Confidence {parts["confidence"].lower()}: {len(parts["sources"])} independent '
+                      f'source{"s" if len(parts["sources"]) != 1 else ""} ({"; ".join(parts["sources"])}). Three or '
+                      f"more is high, two is medium, one is low."),
+            ],
+        ))
+    return alerts
 
 
 def _risk_ranking(positions: list[dict], scores: dict | None, total: float) -> list[dict]:

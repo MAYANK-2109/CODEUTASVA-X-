@@ -58,6 +58,8 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
   const { solution } = alert
   // Alerts that need attention open with their steps; the rest show the action and expand on request.
   const [open, setOpen] = useState(NEEDS_ATTENTION.includes(alert.severity) || Boolean(alert.hedge?.drill))
+  const [showTrail, setShowTrail] = useState(false)
+  const trail = alert.trail ?? []
   return (
     <li className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
@@ -115,11 +117,48 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
         </button>
       </div>
 
-      {open && (
-        <p className="mt-2 text-[11px] text-groww-text-muted leading-relaxed">
-          <span className="font-semibold">Based on: </span>
-          {alert.basis}
-        </p>
+      {/* Evidence trail: from the signal to the decision, one step at a time */}
+      {trail.length > 0 && (
+        <div className="alert-trail mt-2">
+          <button
+            onClick={() => setShowTrail((value) => !value)}
+            aria-expanded={showTrail}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-groww-text-secondary hover:text-groww-green"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M9 6h11M9 12h11M9 18h11" />
+              <circle cx="4" cy="6" r="1.2" />
+              <circle cx="4" cy="12" r="1.2" />
+              <circle cx="4" cy="18" r="1.2" />
+            </svg>
+            {showTrail ? 'Hide evidence trail' : `Evidence trail: how this was worked out (${trail.length} steps)`}
+          </button>
+          {showTrail && (
+            <ol className="mt-2 flex flex-col">
+              {trail.map((step, index) => (
+                <li key={index} className="relative flex gap-2.5 pb-3 last:pb-0">
+                  {/* The line that joins one step to the next */}
+                  {index < trail.length - 1 && (
+                    <span className="absolute left-[9px] top-5 bottom-0 w-px bg-groww-border" aria-hidden />
+                  )}
+                  <span className="relative shrink-0 w-[19px] h-[19px] rounded-full bg-groww-green text-white text-[10px] font-bold flex items-center justify-center">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 text-xs leading-relaxed">
+                    <p className="font-semibold text-groww-text-primary">{step.title}</p>
+                    <p className="text-groww-text-secondary">{step.finding}</p>
+                    {step.method && (
+                      <p className="mt-0.5 text-[11px] text-groww-text-muted">
+                        <span className="font-semibold">How: </span>
+                        {step.method}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       )}
     </li>
   )

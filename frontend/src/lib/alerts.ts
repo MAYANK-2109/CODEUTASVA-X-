@@ -24,6 +24,15 @@ export interface Solution {
   steps: string[]
   figures: { label: string; value: string }[]
   alternative: string | null
+  // The rule that picked the action, with the numbers it compared.
+  why: string
+}
+
+// One step of an alert's evidence trail: what was found, and how.
+export interface TrailStep {
+  title: string
+  finding: string
+  method: string | null
 }
 
 // One holding as the impact model scores it for the coming sessions.
@@ -60,6 +69,7 @@ export interface Alert {
   solution: Solution
   basis: string
   hedge: AlertHedge | null
+  trail: TrailStep[]
 }
 
 export interface AlertsResult {

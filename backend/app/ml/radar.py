@@ -337,5 +337,7 @@ def radar_alerts(positions: list[dict], closes, scenario: str | None = None) -> 
             "recommendation": hedge["summary"] + (f' {hedge["liquidity"]}' if hedge["liquidity"] else ""),
             "basis": f"Confidence {confidence}: {'; '.join(sources)}. {basis}",
             "hedge": {**hedge, "confidence": confidence, "drill": signal["drill"]},
+            "parts": {"signal": signal["detail"], "kind": signal["kind"], "exposed": exposed, "moves": basis,
+                      "confidence": confidence, "sources": sources, "priced": priced},
         })
     return alerts

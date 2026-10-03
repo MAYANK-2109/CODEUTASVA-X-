@@ -434,3 +434,73 @@ def test_every_alert_carries_a_solution_and_rupees_use_indian_grouping(quiet):
         assert alert["solution"]["action"] in ("hedge", "trim", "rebalance", "watch", "hold", "review")
         assert alert["solution"]["headline"] and alert["solution"]["steps"]
     assert solutions.inr(-351300) == "₹3,51,300"
+
+
+# --------------------------------------------------------------------------- evidence trail
+
+
+def titles(alert: dict) -> list[str]:
+    return [step["title"] for step in alert["trail"]]
+
+
+def test_every_alert_has_a_trail_that_ends_with_how_the_action_was_chosen(quiet):
+    quiet(closes(last_day_move=-0.08))
+    result = alerts.build_alerts(HOLDINGS, scenario="cyclone_gujarat")
+    assert {a["category"] for a in result["alerts"]} >= {"price", "concentration", "alt-data"}
+    for alert in result["alerts"]:
+        assert len(alert["trail"]) >= 2 and all(step["title"] and step["finding"] for step in alert["trail"])
+        assert alert["trail"][0]["title"] in ("What was detected", "What the impact model says")
+        last = alert["trail"][-1]
+        assert last["title"] == "How the action was chosen" and last["finding"] == alert["solution"]["why"]
+        assert last["finding"].startswith("Rule:")
+
+
+def test_price_alert_trail_explains_the_signal_the_threshold_and_the_history(quiet):
+    quiet(closes(last_day_move=-0.08))
+    (price,) = by_category(alerts.build_alerts(HOLDINGS))["price"]
+    assert titles(price) == ["What was detected", "Why it is an alert", "What similar moves did next",
+                             "What the impact model says", "How the action was chosen"]
+    detected, why, history, model, _ = price["trail"]
+    assert "fell 8.0%" in detected["finding"] and "beta" in detected["method"]
+    assert "2 standard deviations" in why["finding"] and "large position" in why["finding"]
+    assert "coin flip" in history["finding"]
+    assert "could not score" in model["finding"]          # no macro data in this test, and the trail says so
+
+
+def test_flagged_holding_trail_shows_the_model_reading_and_its_track_record(quiet, monkeypatch):
+    quiet(closes())
+    flagged = {"fall": 0.21, "downside": -0.12, "usual_downside": -0.04, "elevated": True}
+    monkeypatch.setattr(impact, "score_positions", lambda positions, closes: {"AAA.NS": flagged})
+    (risk,) = by_category(alerts.build_alerts(HOLDINGS))["risk"]
+    reading, record, decision = risk["trail"]
+    assert "21%" in reading["finding"] and "flagged" in reading["finding"] and "LightGBM" in reading["method"]
+    assert "never saw in training" in record["method"]
+    assert "extra downside" in decision["finding"] and "₹" in decision["finding"]
+
+
+def test_concentration_and_drill_trails_carry_their_working(quiet):
+    quiet(closes())
+    result = alerts.build_alerts(HOLDINGS, scenario="cyclone_gujarat")
+    (concentration,) = by_category(result)["concentration"]
+    assert titles(concentration) == ["What was detected", "Why it is an alert", "What the sale would change",
+                                     "How the action was chosen"]
+    assert "90th percentile" in concentration["trail"][1]["finding"]
+    assert "Amount to sell" in concentration["trail"][-1]["finding"]
+
+    drill = next(a for a in result["alerts"] if a["hedge"] and a["hedge"]["drill"])
+    assert titles(drill) == ["What was detected", "Which holdings it reaches", "What similar events did",
+                             "How much is already in the price", "How far to trust the signal",
+                             "How the action was chosen"]
+    assert "drill has no real market reaction" in drill["trail"][3]["finding"]
+    assert "rehearsal" in drill["trail"][4]["finding"]
+
+
+def test_news_alert_trail_shows_the_score_and_the_price_reaction(quiet, monkeypatch):
+    quiet(closes())
+    monkeypatch.setattr(alerts, "get_news", lambda query, limit=8: [
+        {"title": "Alpha Refining plunges after fraud probe and plant shutdown", "source": "Wire", "url": "u1"}])
+    (news,) = by_category(alerts.build_alerts(HOLDINGS))["news"]
+    assert titles(news)[:3] == ["What was detected", "Why it is an alert", "Has the price reacted"]
+    assert "fraud probe" in news["trail"][0]["finding"] and "names the holding" in news["trail"][0]["method"]
+    assert "counts as negative" in news["trail"][1]["finding"]
+    assert news["trail"][-1]["finding"].startswith("Rule: a negative headline")
