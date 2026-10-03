@@ -102,7 +102,7 @@ class HoldingIn(BaseModel):
     @field_validator("type")
     @classmethod
     def validate_type(cls, v: str) -> str:
-        allowed = {"STOCK", "MF", "ETF", "BOND"}
+        allowed = {"STOCK", "MF", "ETF", "BOND", "COMMODITY"}
         v = v.upper()
         return v if v in allowed else "STOCK"
 
@@ -116,6 +116,15 @@ class HoldingUpdate(BaseModel):
     units: float | None = None
     buy_price: float | None = None
     current_price: float | None = None
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        allowed = {"STOCK", "MF", "ETF", "BOND", "COMMODITY"}
+        v = v.upper()
+        return v if v in allowed else "STOCK"
 
 
 # ---------------------------------------------------------------------------

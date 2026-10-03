@@ -104,8 +104,8 @@ def test_groww_holdings_statement_skips_the_summary_block():
     reliance = rows[1]
     assert (reliance["units"], reliance["buy_price"], reliance["current_price"]) == (1.0, 1311.0, 1167.7)
     assert reliance["isin"] == "INE002A01018" and reliance["type"] == "STOCK"
-    # Gold fund units carry an INF ISIN; in a demat statement they are ETFs.
-    assert rows[0]["type"] == "ETF" and rows[3]["type"] == "ETF"
+    # Gold and commodity instruments are classified as COMMODITY
+    assert rows[0]["type"] == "COMMODITY" and rows[3]["type"] == "COMMODITY"
     assert rows[3]["current_price"] == 14.28
 
 
@@ -122,7 +122,7 @@ RELIANCE INDUSTRIES LTD INE002A01018 1 1,311 1,311 1,167.7 1,167.7 -143.3"""
         ("NIPPONAMC - NETFSILVER", "INF204KC1402", 35.0, 295.31, 208.71),
         ("RELIANCE INDUSTRIES LTD", "INE002A01018", 1.0, 1311.0, 1167.7),
     ]
-    assert rows[0]["type"] == "ETF"
+    assert rows[0]["type"] == "COMMODITY"
 
 
 def test_upload_fills_symbol_from_isin_and_prefers_the_live_price(monkeypatch):
@@ -169,3 +169,42 @@ def test_isins_and_exact_names_resolve_from_the_exchange_list(monkeypatch):
     assert resolver.candidates("", "INE002A01018", "") == ["RELIANCE.NS"]
     assert resolver.candidates("", "", "State Bank of India") == ["SBIN.NS"]
     assert resolver.candidates("", "", "RELIANCE INDUSTRIES LTD") == ["RELIANCE.NS"]
+
+
+def test_asset_class_inferences():
+    from app.portfolio.extractor import _infer_type
+
+    # Commodities (Gold, Silver, SGB, Bullion, Commodity funds)
+    assert _infer_type("Nippon India ETF Gold BeES", "INF204KB17I5") == "COMMODITY"
+    assert _infer_type("SBI Gold Fund - Direct Plan - Growth") == "COMMODITY"
+    assert _infer_type("Nippon India Silver FoF") == "COMMODITY"
+    assert _infer_type("ICICI Prudential Commodities Fund") == "COMMODITY"
+    assert _infer_type("Sovereign Gold Bond 2028-29 Series I", "IN0020190394") == "COMMODITY"
+    assert _infer_type("SGBMAY29") == "COMMODITY"
+    assert _infer_type("Crude Oil August Future") == "COMMODITY"
+    assert _infer_type("Natural Gas") == "COMMODITY"
+    assert _infer_type("ZERODHAAMC - SILVERCASE") == "COMMODITY"
+    assert _infer_type("TATAAML-TATAGOLD") == "COMMODITY"
+
+    # Mutual Funds (Equity, Debt, Hybrid, Index Funds, ELSS)
+    assert _infer_type("Parag Parikh Flexi Cap Fund - Direct Plan - Growth", "INF879O01019") == "MF"
+    assert _infer_type("Quant Small Cap Fund - Growth") == "MF"
+    assert _infer_type("HDFC Top 100 - Regular - IDCW") == "MF"
+    assert _infer_type("Mirae Asset Large Cap Plan") == "MF"
+    assert _infer_type("SBI Bluechip Scheme") == "MF"
+    assert _infer_type("Some Mystery Scheme", "INF123456789") == "MF"
+
+    # ETFs (Equity and Index ETFs)
+    assert _infer_type("Nippon India Nifty 50 BeES ETF") == "ETF"
+    assert _infer_type("Bank BeES") == "ETF"
+    assert _infer_type("CPSE ETF") == "ETF"
+
+    # Bonds & G-Secs
+    assert _infer_type("7.26% GOI 2033", "IN0020230018") == "BOND"
+    assert _infer_type("NABARD NCD 2028") == "BOND"
+    assert _infer_type("REC Tax Free Bond") == "BOND"
+
+    # Stocks (Equities)
+    assert _infer_type("Reliance Industries Ltd", "INE002A01018") == "STOCK"
+    assert _infer_type("Infosys Limited", "INE009A01021") == "STOCK"
+    assert _infer_type("Tata Motors Ltd") == "STOCK"

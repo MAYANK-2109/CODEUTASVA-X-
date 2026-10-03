@@ -46,6 +46,8 @@ SECTORS = {
     "LT": "Infrastructure", "ADANIPORTS": "Infrastructure", "ULTRACEMCO": "Cement",
     "GRASIM": "Cement", "ASIANPAINT": "Paints", "BERGEPAINT": "Paints",
     "BHARTIARTL": "Telecom", "DLF": "Real Estate", "TITAN": "Consumer",
+    "GOLDBEES": "Commodities", "SILVERBEES": "Commodities", "SETFGOLD": "Commodities",
+    "TATAGOLD": "Commodities", "SILVERCASE": "Commodities", "NETFSILVER": "Commodities",
 }
 
 _memory: dict[str, tuple[float, object]] = {}
@@ -76,7 +78,7 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
             continue
 
         row_type = (row.get("type") or "STOCK").upper()
-        if row_type not in ("STOCK", "ETF", "EQUITY"):
+        if row_type not in ("STOCK", "ETF", "EQUITY", "COMMODITY"):
             continue
 
         # Buy price alias (supports 'buy_price' or 'avg_price' or 'cost_price')

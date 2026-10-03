@@ -12,7 +12,7 @@ interface Holding {
   name: string
   symbol: string
   isin: string
-  type: 'STOCK' | 'MF' | 'ETF' | 'BOND'
+  type: 'STOCK' | 'MF' | 'ETF' | 'BOND' | 'COMMODITY'
   buy_date: string | null
   units: number | null
   buy_price: number | null
@@ -33,10 +33,11 @@ const BACKEND_URL: string =
 const PRICE_REFRESH_MS = 60_000
 
 const TYPE_COLOURS: Record<string, string> = {
-  STOCK: 'bg-blue-100 text-blue-700',
-  MF:    'bg-purple-100 text-purple-700',
-  ETF:   'bg-amber-100 text-amber-700',
-  BOND:  'bg-slate-100 text-slate-700',
+  STOCK:     'bg-blue-100 text-blue-700',
+  MF:        'bg-purple-100 text-purple-700',
+  ETF:       'bg-amber-100 text-amber-700',
+  COMMODITY: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+  BOND:      'bg-slate-100 text-slate-700',
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +397,7 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
                             <select className="bg-transparent outline-none text-gray-600 text-xs rounded px-1 cursor-pointer"
                               value={row.type} onChange={e => updateRow(idx, 'type', e.target.value)}
                               onClick={e => e.stopPropagation()}>
-                              <option>STOCK</option><option>MF</option><option>ETF</option><option>BOND</option>
+                              <option>STOCK</option><option>MF</option><option>ETF</option><option>COMMODITY</option><option>BOND</option>
                             </select>
                           </td>
                           <td className="px-3 py-2">
@@ -709,7 +710,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
         {holdings.length > 0 && (
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div className="flex items-center gap-2 flex-wrap">
-              {(['ALL', 'STOCK', 'MF', 'ETF', 'BOND'] as const).map(t => (
+              {(['ALL', 'STOCK', 'MF', 'ETF', 'COMMODITY', 'BOND'] as const).map(t => (
                 <button key={t} onClick={() => setFilterType(t)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${filterType === t ? 'bg-groww-green text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                   {t}

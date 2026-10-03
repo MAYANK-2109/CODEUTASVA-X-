@@ -111,6 +111,16 @@ COMPANY_TICKER_MAP = {
     "ltimindtree": "LTIM",
     "vedanta": "VEDL",
     "dlf": "DLF",
+    "gold bees": "GOLDBEES",
+    "goldbees": "GOLDBEES",
+    "tatagold": "TATAGOLD",
+    "silver bees": "SILVERBEES",
+    "silverbees": "SILVERBEES",
+    "silvercase": "SILVERCASE",
+    "nifty bees": "NIFTYBEES",
+    "niftybees": "NIFTYBEES",
+    "bank bees": "BANKBEES",
+    "bankbees": "BANKBEES",
 }
 
 
@@ -246,16 +256,97 @@ def _clean_date(val: Any) -> str | None:
 
 
 def _infer_type(name: str, isin: str = "") -> str:
-    n = name.upper()
-    if any(k in n for k in ("FUND", "SCHEME", "DIRECT", "GROWTH", "DIVIDEND", "SIP", "MF", "MUTUAL")):
-        return "MF"
-    if "ETF" in n or "BEES" in n:
+    """
+    Classify a holding into one of 5 standard asset classes:
+      - COMMODITY: Gold, Silver, SGB, Bullion, Precious Metals, Commodity funds/ETFs, Crude, Natural Gas
+      - MF: Mutual Funds (Equity, Debt, Hybrid, Index Funds, Liquid, ELSS, Flexicap, Midcap, etc.)
+      - ETF: Exchange Traded Funds (Index/Sectoral ETFs like NiftyBeES, BankBeES, ITBeES)
+      - BOND: Government Securities (G-Sec), Corporate Bonds, NCDs, T-Bills, Debentures
+      - STOCK: Direct equity shares in companies
+    """
+    n = (name or "").strip().upper()
+    isin_clean = (isin or "").strip().upper()
+
+    # 1. COMMODITY check (Gold, Silver, SGB, Bullion, Commodity funds/ETFs)
+    if "SGB" in n or "SOVEREIGN GOLD" in n:
+        return "COMMODITY"
+
+    if any(k in n for k in (
+        "GOLD", "GOLDBEES", "GOLDSHARE", "GOLDETF", "NETFGOLD",
+        "TATAGOLD", "SBIGOLD", "HDFCGOLD", "AXISGOLD", "KOTAKGOLD", "ICICIGOLD"
+    )):
+        return "COMMODITY"
+
+    if any(k in n for k in (
+        "SILVER", "SILVERBEES", "SILVERCASE", "SILVERETF", "NETFSILVER",
+        "TATASILVER", "SBISILVER", "HDFCSILVER", "ICICISILVER"
+    )):
+        return "COMMODITY"
+
+    if any(k in n for k in (
+        "COMMODIT", "BULLION", "CRUDE", "NATURAL GAS", "NATGAS", "PRECIOUS METAL"
+    )):
+        return "COMMODITY"
+
+    # 2. ETF check (Index / Equity / Debt ETFs that are NOT commodities)
+    if any(k in n for k in (
+        "ETF", "BEES", "EXCHANGE TRADED", "NETF", "INVST", "NV20",
+        "NIFTYBEES", "BANKBEES", "ITBEES", "JUNIORBEES", "CPSEETF", "BHARAT22",
+        "MOM100", "MAFANG", "HDFCMFGETF"
+    )):
         return "ETF"
-    if any(k in n for k in ("BOND", "NCD", "DEBENTURE", "GSEC", "T-BILL", "GOI")):
+
+    # 3. BOND check (Government Securities, Corporate Bonds, NCDs, T-Bills)
+    if any(k in n for k in (
+        "BOND", "NCD", "DEBENTURE", "GSEC", "G-SEC", "T-BILL", "TBILL",
+        "TREASURY", "GOI", "GOVERNMENT OF INDIA", "TAX FREE"
+    )):
         return "BOND"
-    # ISINs starting INF are fund units; held in a demat account they are ETFs.
-    if isin.upper().startswith("INF"):
-        return "ETF"
+    if isin_clean.startswith("IN00") or isin_clean.startswith("IN01"):
+        return "BOND"
+
+    # 4. MUTUAL FUND (MF) check
+    # In India, all mutual fund folios / units carry an ISIN starting with INF
+    if isin_clean.startswith("INF"):
+        return "MF"
+
+    # Plan and structure keywords common to mutual fund schemes
+    if any(k in n for k in (
+        "FUND", "SCHEME", "DIRECT PLAN", "REGULAR PLAN", "DIRECT-GROWTH", "REGULAR-GROWTH",
+        "GROWTH PLAN", "IDCW", "DIVIDEND", "SIP", "MUTUAL", "FOF", "NAV", "REINVESTMENT",
+        "PAYOUT", "BONUS PLAN"
+    )):
+        return "MF"
+
+    # Categorical scheme classification
+    if any(k in n for k in (
+        "FLEXI CAP", "FLEXICAP", "LARGE CAP", "LARGECAP", "MID CAP", "MIDCAP",
+        "SMALL CAP", "SMALLCAP", "MULTI CAP", "MULTICAP", "LARGE & MID",
+        "ELSS", "TAX SAVER", "BLUECHIP", "INDEX FUND", "FOCUSED", "CONTRA",
+        "BALANCED ADVANTAGE", "DYNAMIC ASSET", "HYBRID", "EQUITY SAVINGS",
+        "ARBITRAGE", "LIQUID", "OVERNIGHT", "ULTRA SHORT", "LOW DURATION",
+        "MONEY MARKET", "SHORT DURATION", "MEDIUM DURATION", "LONG DURATION",
+        "GILT", "BANKING & PSU", "CREDIT RISK", "FLOATER", "CAPITAL BUILDER"
+    )):
+        return "MF"
+
+    # Prominent AMC names
+    if any(k in n for k in (
+        "PPFAS", "PARAG PARIKH", "MIRAE ASSET", "QUANT ", "NIPPON INDIA",
+        "SBI MUTUAL", "HDFC MUTUAL", "ICICI PRUDENTIAL", "KOTAK MAHINDRA",
+        "AXIS MUTUAL", "UTI ", "BANDHAN", "DSP ", "CANARA ROBECO",
+        "ADITYA BIRLA SUN LIFE", "ABSL", "MOTILAL OSWAL", "EDELWEISS",
+        "FRANKLIN TEMPLETON", "INVESCO", "SUNDARAM", "HSBC ", "TATA MUTUAL",
+        "PGIM", "WHITEOAK", "BARODA BNP"
+    )):
+        return "MF"
+
+    # Token match for standalone mutual fund words
+    words = set(re.findall(r"\b[A-Z]+\b", n))
+    if words & {"FUND", "FUNDS", "MF", "SCHEME", "GROWTH", "DIRECT", "REGULAR", "IDCW", "PLAN"}:
+        return "MF"
+
+    # 5. Default: Individual company equities
     return "STOCK"
 
 
