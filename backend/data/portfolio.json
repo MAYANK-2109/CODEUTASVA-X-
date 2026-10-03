@@ -1,0 +1,13 @@
+{
+  "currency": "INR",
+  "holdings": [
+    { "ticker": "RELIANCE.NS", "name": "Reliance Industries", "sector": "Energy", "shares": 40, "avg_price": 1120.0 },
+    { "ticker": "ONGC.NS", "name": "Oil & Natural Gas Corp", "sector": "Energy", "shares": 300, "avg_price": 205.0 },
+    { "ticker": "IOC.NS", "name": "Indian Oil Corp", "sector": "Energy", "shares": 400, "avg_price": 138.0 },
+    { "ticker": "NTPC.NS", "name": "NTPC", "sector": "Utilities", "shares": 200, "avg_price": 290.0 },
+    { "ticker": "HDFCBANK.NS", "name": "HDFC Bank", "sector": "Banking", "shares": 60, "avg_price": 690.0 },
+    { "ticker": "TCS.NS", "name": "Tata Consultancy Services", "sector": "IT", "shares": 15, "avg_price": 2150.0 },
+    { "ticker": "ITC.NS", "name": "ITC", "sector": "FMCG", "shares": 250, "avg_price": 240.0 },
+    { "ticker": "INDIGO.NS", "name": "InterGlobe Aviation", "sector": "Airlines", "shares": 10, "avg_price": 4400.0 }
+  ]
+}
