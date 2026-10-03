@@ -34,6 +34,14 @@ def synthetic_closes(event_drop: float = 0.0, market_drop: float = 0.0) -> pd.Da
     )
 
 
+@pytest.fixture(autouse=True)
+def no_ticker_lookups(monkeypatch):
+    """Ticker search is a network call; tests that need it supply their own."""
+    from app.tools import resolver
+
+    monkeypatch.setattr(resolver, "search", lambda query: None)
+
+
 @pytest.fixture
 def offline(monkeypatch):
     """Replace every network tool with fixed data."""
@@ -448,13 +456,96 @@ def test_question_naming_a_region_links_it_to_holdings_without_an_alert(offline,
     assert any("None of your holdings has a mapped operation there" in c for c in claims)
 
 
-def test_prices_endpoint_maps_symbols_and_omits_unpriced(monkeypatch):
+def test_prices_endpoint_resolves_by_symbol_isin_and_name(monkeypatch):
     from app import api
+    from app.tools import resolver
 
-    monkeypatch.setattr(api, "get_latest_prices", lambda tickers: ({"RELIANCE.NS": 1167.7}, "now"))
-    body = TestClient(app).post("/api/prices", json={"symbols": ["RELIANCE", "NOSUCH", " "]}).json()
-    assert body == {"prices": {"RELIANCE": 1167.7}, "as_of": "now"}
-    assert TestClient(app).post("/api/prices", json={"symbols": []}).json() == {"prices": {}, "as_of": None}
+    lookups = {"INE213A01029": "ONGC.NS", "HDFC BANK": "HDFCBANK.NS", "Sun Pharmaceutical": "SUNPHARMA.NS"}
+    monkeypatch.setattr(resolver, "search", lambda query: lookups.get(query))
+    available = {"RELIANCE.NS": 1167.7, "ONGC.NS": 222.37, "HDFCBANK.NS": 721.2, "SMALLCO.BO": 50.0,
+                 "SUNPHARMA.NS": 1600.0}
+    monkeypatch.setattr(api, "get_latest_prices",
+                        lambda tickers: ({t: available[t] for t in tickers if t in available}, "now"))
+
+    body = TestClient(app).post("/api/prices", json={"holdings": [
+        {"key": "a", "symbol": "reliance-eq"},
+        {"key": "b", "isin": "INE213A01029", "name": "OIL AND NATURAL GAS CORPORATION LIMITED"},
+        {"key": "c", "name": "HDFC BANK LIMITED - EQ"},
+        {"key": "d", "symbol": "SMALLCO"},
+        {"key": "e", "name": "Unlisted Private Company"},
+        {"key": "f", "symbol": "NOSUCH"},
+        {"key": "g", "name": "Sun Pharmaceutical Inds"},
+        {"key": "h", "symbol": "WRONGSYM", "name": "HDFC BANK LIMITED"},
+    ]}).json()
+    assert body["prices"] == {"a": 1167.7, "b": 222.37, "c": 721.2, "d": 50.0, "g": 1600.0, "h": 721.2}
+    assert body["tickers"] == {"a": "RELIANCE.NS", "b": "ONGC.NS", "c": "HDFCBANK.NS", "d": "SMALLCO.BO",
+                               "g": "SUNPHARMA.NS", "h": "HDFCBANK.NS"}
+
+    old_style = TestClient(app).post("/api/prices", json={"symbols": ["RELIANCE", " "]}).json()
+    assert old_style["prices"] == {"RELIANCE": 1167.7}
+    assert TestClient(app).post("/api/prices", json={}).json() == {"prices": {}, "tickers": {}, "as_of": None}
+
+
+def test_symbol_and_name_cleaning():
+    from app.tools import resolver
+
+    assert resolver.clean_symbol("nse:reliance-eq") == "RELIANCE"
+    assert resolver.clean_symbol("M&M") == "M&M"
+    assert resolver.clean_symbol("RELIANCE.BO") == "RELIANCE.BO"
+    assert resolver.clean_name("HDFC BANK LIMITED - EQ") == "HDFC BANK"
+    assert resolver.candidates("500325") == []
+    assert resolver.candidates("TCS") == ["TCS.NS", "TCS.BO"]
+
+    asked = []
+    hits = {"Infosys": "INFY.NS", "Adani Ports": "ADANIPORTS.NS"}
+    lookup = lambda query: asked.append(query) or hits.get(query)  # noqa: E731
+    import pytest as _pytest
+    with _pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(resolver, "search", lookup)
+        assert resolver.search_name("Infosys Ltd") == "INFY.NS"
+        assert resolver.search_name("Adani Ports Special Econ") == "ADANIPORTS.NS"
+        asked.clear()
+        assert resolver.search_name("Tata Unknownco") is None
+        assert asked == ["Tata Unknownco"]  # never shortened to the single word "Tata"
+
+
+def test_latest_prices_retry_blanks_and_keep_a_recent_quote(monkeypatch):
+    from app.ingestion import prices
+
+    monkeypatch.setattr(prices, "_cache", {})
+    calls = []
+
+    def download(tickers):
+        calls.append(list(tickers))
+        return {"A.NS": 10.0} if len(calls) == 1 else {"B.NS": 20.0}
+
+    monkeypatch.setattr(prices, "_download", download)
+    assert prices.get_latest_prices(["A.NS", "B.NS"])[0] == {"A.NS": 10.0, "B.NS": 20.0}
+    assert calls == [["A.NS", "B.NS"], ["B.NS"]]
+
+    # Within the fresh window nothing is fetched again.
+    assert prices.get_latest_prices(["A.NS"])[0] == {"A.NS": 10.0}
+    assert len(calls) == 2
+
+    # The source fails after the quote goes stale: the recent quote is still served.
+    monkeypatch.setattr(prices, "FRESH_SECONDS", 0)
+    monkeypatch.setattr(prices, "_download", lambda tickers: (_ for _ in ()).throw(RuntimeError("down")))
+    assert prices.get_latest_prices(["A.NS"])[0] == {"A.NS": 10.0}
+    monkeypatch.setattr(prices, "STALE_OK_SECONDS", 0)
+    assert prices.get_latest_prices(["A.NS"]) == ({}, None)
+
+
+def test_holdings_with_only_an_isin_or_name_are_analysed(monkeypatch):
+    from app.tools import resolver
+
+    monkeypatch.setattr(resolver, "search", lambda query: {"INE213A01029": "ONGC.NS"}.get(query))
+    holdings, source = normalise_holdings([
+        {"name": "ONGC LTD", "symbol": "", "isin": "INE213A01029", "units": 5, "type": "STOCK"},
+        {"name": "Mystery Co", "symbol": "", "isin": "", "units": 5, "type": "STOCK"},
+        {"name": "Some Fund", "symbol": "", "isin": "INF000000000", "units": 5, "type": "MF"},
+    ])
+    assert source == "user" and [h["ticker"] for h in holdings] == ["ONGC.NS"]
+    assert holdings[0]["sector"] == "Energy"
 
 
 def test_history_retries_blank_tickers_and_rejects_a_missing_index(monkeypatch, tmp_path):

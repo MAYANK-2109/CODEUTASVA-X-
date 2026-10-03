@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
+from app.tools import resolver
+
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 CACHE_DIR = DATA_DIR / "cache"
 SAMPLE_PORTFOLIO = DATA_DIR / "portfolio.json"
@@ -64,15 +66,18 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
     for row in raw or []:
         symbol = (row.get("symbol") or "").strip()
         units = row.get("units")
-        if not symbol or not units or units <= 0:
+        if not units or units <= 0:
             continue
         if (row.get("type") or "STOCK").upper() not in ("STOCK", "ETF"):
             continue
-        ticker = to_ticker(symbol)
+        options = resolver.candidates(symbol, row.get("isin") or "", row.get("name") or "")
+        if not options:
+            continue
+        ticker = options[0]
         holdings.append(
             {
                 "ticker": ticker,
-                "name": row.get("name") or symbol,
+                "name": row.get("name") or symbol or ticker,
                 "units": float(units),
                 "buy_price": row.get("buy_price"),
                 "sector": SECTORS.get(ticker.split(".")[0], "Other"),

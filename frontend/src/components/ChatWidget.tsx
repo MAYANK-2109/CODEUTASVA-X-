@@ -329,7 +329,7 @@ const ChatWidget: React.FC = () => {
   const loadHoldings = async () => {
     const { data, error } = await supabase
       .from('portfolio_holdings')
-      .select('name, symbol, units, buy_price, type')
+      .select('name, symbol, isin, units, buy_price, type')
       .eq('user_id', user.id)
     return error ? null : data
   }

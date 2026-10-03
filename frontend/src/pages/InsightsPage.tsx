@@ -459,7 +459,7 @@ const InsightsPage: React.FC = () => {
     try {
       const { data: rows, error } = await supabase
         .from('portfolio_holdings')
-        .select('name, symbol, units, buy_price, type')
+        .select('name, symbol, isin, units, buy_price, type')
         .eq('user_id', user.id)
       const response = await fetch(`${BACKEND_URL}/api/insights/portfolio`, {
         method: 'POST',

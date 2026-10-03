@@ -494,6 +494,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
   const [sortBy, setSortBy] = useState<'name' | 'pnl' | 'value'>('name')
   const [error, setError] = useState<string | null>(null)
   const [livePrices, setLivePrices] = useState<Record<string, number>>({})
+  const [liveTickers, setLiveTickers] = useState<Record<string, string>>({})
   const [pricesAsOf, setPricesAsOf] = useState<string | null>(null)
   const [pricesFailed, setPricesFailed] = useState(false)
 
@@ -523,22 +524,27 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
     }
   }, [externalShowModal, onExternalModalClose])
 
-  // Latest market prices for every holding that has a symbol, refreshed each minute.
-  const symbolKey = [...new Set(holdings.map(h => h.symbol?.trim()).filter(Boolean))].sort().join(',')
+  // Latest market price for every holding, refreshed each minute. The backend
+  // finds each one by symbol, then ISIN, then company name.
+  const priceKey = (h: Holding) => h.id ?? `${h.symbol}|${h.isin}|${h.name}`
+  const refsJson = JSON.stringify(
+    holdings.map(h => ({ key: priceKey(h), symbol: h.symbol ?? '', isin: h.isin ?? '', name: h.name ?? '' })),
+  )
   useEffect(() => {
-    if (!symbolKey) return
+    if (refsJson === '[]') return
     let cancelled = false
     const load = async () => {
       try {
         const resp = await fetch(`${BACKEND_URL}/api/prices`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ symbols: symbolKey.split(',') }),
+          body: `{"holdings":${refsJson}}`,
         })
         if (!resp.ok) throw new Error(`Request failed (${resp.status})`)
         const data = await resp.json()
         if (cancelled) return
         setLivePrices(data.prices ?? {})
+        setLiveTickers(data.tickers ?? {})
         setPricesAsOf(data.as_of ?? null)
         setPricesFailed(false)
       } catch {
@@ -549,10 +555,10 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
     load()
     const timer = setInterval(load, PRICE_REFRESH_MS)
     return () => { cancelled = true; clearInterval(timer) }
-  }, [symbolKey])
+  }, [refsJson])
 
-  const isLive = (h: Holding) => livePrices[h.symbol?.trim()] != null
-  const priced = holdings.map(h => (isLive(h) ? { ...h, current_price: livePrices[h.symbol.trim()] } : h))
+  const isLive = (h: Holding) => livePrices[priceKey(h)] != null
+  const priced = holdings.map(h => (isLive(h) ? { ...h, current_price: livePrices[priceKey(h)] } : h))
   const liveCount = holdings.filter(isLive).length
 
   const handleAdd = (newHoldings: Holding[]) => {
@@ -595,7 +601,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
             {holdings.length} holding{holdings.length !== 1 ? 's' : ''} &middot; {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
             {pricesAsOf && (
               <span id="portfolio-live-status">
-                {' '}&middot; {liveCount} live price{liveCount !== 1 ? 's' : ''}, updated {new Date(pricesAsOf).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                {' '}&middot; {liveCount} of {holdings.length} live, updated {new Date(pricesAsOf).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
             {pricesFailed && <span className="text-amber-600"> &middot; live prices unavailable, showing {pricesAsOf ? 'the last update' : 'saved prices'}</span>}
@@ -737,8 +743,12 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                             <div className="flex flex-col items-end">
                               <span className="text-sm font-medium text-gray-800 tabular-nums">{fmtCur(h.current_price)}</span>
                               {isLive(h) ? (
-                                <span className="flex items-center gap-1 text-[10px] font-medium text-groww-green">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-groww-green" />Live
+                                <span
+                                  className="flex items-center gap-1 text-[10px] font-medium text-groww-green"
+                                  title={`Latest market price for ${liveTickers[priceKey(h)] ?? 'this holding'}`}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-groww-green" />
+                                  Live &middot; {(liveTickers[priceKey(h)] ?? '').replace(/\.(NS|BO)$/, '')}
                                 </span>
                               ) : (
                                 <span className="text-[10px] text-gray-400" title="No market price found for this holding; showing the price saved with it">Saved</span>
