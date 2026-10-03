@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #F8FAF9;
+    color: #1A1A2E;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #D1D5DB;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+  }
+}
+
+@layer components {
+  /* Auth input styles */
+  .auth-input {
+    @apply w-full px-4 py-3 rounded-xl border border-groww-border bg-white text-groww-text-primary placeholder-groww-text-muted text-sm font-inter outline-none transition-all duration-200;
+  }
+
+  .auth-input:focus {
+    @apply border-groww-green;
+    box-shadow: 0 0 0 3px rgba(0, 179, 134, 0.12);
+  }
+
+  /* Primary button */
+  .btn-primary {
+    @apply w-full py-3 px-6 bg-groww-green text-white font-semibold text-sm rounded-xl transition-all duration-200 flex items-center justify-center gap-2 outline-none;
+  }
+
+  .btn-primary:hover {
+    @apply bg-groww-green-dark;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0, 179, 134, 0.35);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0px);
+  }
+
+  .btn-primary:disabled {
+    @apply opacity-60 cursor-not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  /* Sidebar nav item */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-groww-text-secondary text-sm font-medium transition-all duration-200 cursor-pointer relative;
+  }
+
+  .nav-item:hover {
+    @apply bg-groww-green-light text-groww-green;
+  }
+
+  .nav-item.active {
+    @apply bg-groww-green-light text-groww-green font-semibold;
+  }
+
+  .nav-item.active::before {
+    content: '';
+    @apply absolute left-0 top-2 bottom-2 w-0.5 bg-groww-green rounded-full;
+  }
+
+  /* Sidebar collapsed nav item */
+  .nav-item-collapsed {
+    @apply flex items-center justify-center p-2.5 rounded-xl text-groww-text-secondary transition-all duration-200 cursor-pointer;
+  }
+
+  .nav-item-collapsed:hover {
+    @apply bg-groww-green-light text-groww-green;
+  }
+
+  .nav-item-collapsed.active {
+    @apply bg-groww-green-light text-groww-green;
+  }
+}
+
+@layer utilities {
+  .font-inter {
+    font-family: 'Inter', sans-serif;
+  }
+}
