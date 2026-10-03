@@ -4,9 +4,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.ingestion.news import HOLDINGS_WINDOW_DAYS, get_holdings_news
+from app.ingestion.news import HOLDINGS_WINDOW_DAYS, get_sector_news
 from app.ingestion.prices import get_latest_prices
-from app.tools import resolver, vector_store
+from app.tools import resolver, sectors, vector_store
 from app.tools.market import get_indices, market_trend, normalise_holdings
 
 PORTFOLIO_FILE = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
@@ -59,27 +59,29 @@ def portfolio() -> dict:
 
 class NewsRequest(BaseModel):
     holdings: list[dict] | None = None
-    limit: int = Field(default=20, ge=1, le=50)
+    limit: int = Field(default=30, ge=1, le=50)
 
 
-def _holdings_news(raw_holdings: list[dict] | None, limit: int) -> dict:
+def _sector_news(raw_holdings: list[dict] | None, limit: int) -> dict:
     holdings, source = normalise_holdings(raw_holdings)
-    items = get_holdings_news(holdings, limit)
-    vector_store.index_news(items)  # embedded and indexed in the background
-    return {"items": items, "portfolio_source": source, "holdings": len(holdings),
-            "window_days": HOLDINGS_WINDOW_DAYS}
+    # A holding outside the built-in sector map has its sector looked up once.
+    found = sectors.resolve([h["ticker"] for h in holdings if h["sector"] == sectors.UNKNOWN])
+    holdings = [{**h, "sector": found.get(h["ticker"], h["sector"])} for h in holdings]
+    result = get_sector_news(holdings, limit)
+    vector_store.index_news(result["items"])  # embedded and indexed in the background
+    return {**result, "portfolio_source": source, "holdings": len(holdings), "window_days": HOLDINGS_WINDOW_DAYS}
 
 
 @router.post("/news")
 def news_for_holdings(request: NewsRequest) -> dict:
-    """Recent headlines that name one of the user's stock holdings, and nothing else."""
-    return _holdings_news(request.holdings, request.limit)
+    """Recent headlines about the sectors of the user's stock holdings, and nothing else."""
+    return _sector_news(request.holdings, request.limit)
 
 
 @router.get("/news")
-def news(limit: int = 20) -> dict:
+def news(limit: int = 30) -> dict:
     """The same for the sample portfolio, for a caller with no holdings to send."""
-    return _holdings_news(None, limit)
+    return _sector_news(None, limit)
 
 
 class HoldingRef(BaseModel):

@@ -16,8 +16,13 @@ HOLDINGS_PER_QUERY = 6   # a longer query is cut short by the feed
 MAX_HOLDINGS_SEARCHED = 30
 HEADLINES_PER_QUERY = 40
 
+SECTOR_HEADLINES_PER_QUERY = 30
+MAX_SECTORS_SEARCHED = 10
+
 WORD_START = r"(?<![\w-])"
 SMALL_WORDS = {"of", "and", "the", "for"}
+# Symbols that are also a common abbreviation, and the words that give the other meaning away.
+OTHER_MEANINGS = {"ITC": re.compile(r"\b(?:GST|CGST|SGST|IGST|input tax|tax credit)\b", re.IGNORECASE)}
 
 _cache: dict[str, tuple[float, list]] = {}
 
@@ -104,6 +109,9 @@ def initials(name: str) -> str | None:
 
 
 def names_holding(title: str, name: str, ticker: str = "") -> bool:
+    other_meaning = OTHER_MEANINGS.get(ticker.split(".")[0].upper())
+    if other_meaning and other_meaning.search(title):
+        return False
     return any(pattern.search(title) for pattern in mention_patterns(name, ticker))
 
 
@@ -135,21 +143,87 @@ def get_holdings_news(holdings: list[dict], limit: int = 20) -> list[dict]:
     with ThreadPoolExecutor(max_workers=len(queries)) as pool:
         batches = list(pool.map(lambda query: get_news(query, HEADLINES_PER_QUERY), queries))
 
-    patterns = [(h["name"], mention_patterns(h["name"], h["ticker"])) for h in holdings]
     found: dict[str, dict] = {}
     for item in (item for batch in batches for item in batch):
-        named = [name for name, tests in patterns if any(test.search(item["title"]) for test in tests)]
+        named = [h["name"] for h in holdings if names_holding(item["title"], h["name"], h["ticker"])]
         if named and item["title"] not in found:
             found[item["title"]] = {**item, "holdings": named}
     newest_first = sorted(found.values(), key=lambda i: i["published_at"] or "", reverse=True)
     if len(newest_first) <= limit:
         return newest_first
 
-    waiting = {name: [i for i in newest_first if name in i["holdings"]] for name, _ in patterns}
-    waiting = {name: items for name, items in waiting.items() if items}
+    return _take_turns(newest_first, {h["name"]: [i for i in newest_first if h["name"] in i["holdings"]]
+                                      for h in holdings}, limit)
+
+
+# --------------------------------------------------------------------------- sector news
+
+# Per sector: the name shown, what to search for, and the words a headline must
+# contain to count as being about that sector. Matching ignores case unless noted.
+SECTOR_TOPICS = {
+    "Steel": ("Steel", '"steel sector" OR "steel prices" OR steelmakers OR "iron ore"',
+              r"steel\w*|iron ore|coking coal"),
+    "Metals": ("Metals and mining", '"metal stocks" OR aluminium OR copper OR "metal prices" OR mining',
+               r"metals?|alumini?um|copper|zinc|mining|miners?|iron ore|steel\w*"),
+    "Energy": ("Oil and gas", '"oil and gas" OR "crude oil" OR refinery OR "fuel prices" OR OPEC',
+               r"crude|(?<!edible )(?<!palm )(?<!cooking )oil|gas|refiner\w*|petrol|diesel|fuel|OPEC\+?|LNG|petroleum"),
+    "Utilities": ("Power", '"power sector" OR electricity OR "power demand" OR discoms OR "renewable energy"',
+                  r"power (?:sector|demand|plants?|tariffs?|grid|generation|supply|producers?|ministry|cuts?|stocks)"
+                  r"|electricity|discoms?|renewable\w*|solar|thermal|hydro\w*|coal"),
+    "Banking": ("Banking", 'banks OR "banking sector" OR RBI OR "credit growth"',
+                r"banks?|banking|RBI|NPAs?|lending|lenders?|credit growth|deposits?|repo rate"),
+    "Financials": ("Financial services", 'NBFC OR insurers OR "insurance sector" OR "mutual funds" OR "financial services"',
+                   r"NBFCs?|insur\w+|mutual funds?|financial services|fintech|brokerages?|SEBI|IRDAI"),
+    "IT": ("IT services", '"IT sector" OR "IT services" OR "IT stocks" OR "Nifty IT" OR "software exports"',
+           r"(?-i:IT) (?:sector|services|stocks|firms|companies|majors|industry|index)|Nifty IT|software"
+           r"|tech (?:services|stocks|layoffs)|outsourcing|H-?1B"),
+    "FMCG": ("FMCG", 'FMCG OR "consumer goods" OR "rural demand"',
+             r"FMCG|consumer goods|rural demand|packaged foods?|staples"),
+    "Airlines": ("Aviation", 'airlines OR aviation OR airfares OR DGCA OR "jet fuel"',
+                 r"airlines?|aviation|airfares?|DGCA|air travel|flights?|airports?|ATF|jet fuel"),
+    "Auto": ("Automobiles", '"auto sector" OR "car sales" OR "vehicle sales" OR automakers OR "two-wheeler"',
+             r"auto(?:mobile|maker|motive)?s?|car sales|vehicles?|two-wheelers?|EVs?|SUVs?|SIAM|tractors?|carmakers?"),
+    "Pharma": ("Pharma and healthcare", 'pharma OR drugmakers OR USFDA OR "healthcare sector"',
+               r"pharma\w*|drug\w*|USFDA|healthcare|hospitals?|generics?|biotech\w*"),
+    "Infrastructure": ("Infrastructure", 'infrastructure OR "capital expenditure" OR "order book" OR ports OR highways',
+                       r"infrastructure|infra|capex|capital expenditure|order book|ports?|highways?|construction|railways?"),
+    "Cement": ("Cement", '"cement sector" OR "cement prices" OR "cement companies"', r"cement"),
+    "Paints": ("Paints", '"paint industry" OR "paint companies" OR "paint makers"', r"paints?|paintmakers?"),
+    "Telecom": ("Telecom", 'telecom OR "tariff hike" OR spectrum OR TRAI OR 5G',
+                r"telecom\w*|telcos?|spectrum|TRAI|5G|tariff hikes?|ARPU"),
+    "Real Estate": ("Real estate", '"real estate" OR realty OR "housing sales" OR "home sales"',
+                    r"real estate|realty|housing|home sales|property|developers?"),
+    "Consumer": ("Retail and consumer", 'jewellery OR retailers OR "consumer durables" OR "festive demand"',
+                 r"jewel\w+|retail\w*|consumer durables?|festive (?:demand|sales)|apparel"),
+    "Commodities": ("Gold and silver", '"gold prices" OR "silver prices" OR bullion', r"gold|silver|bullion"),
+    "Chemicals": ("Chemicals", '"chemical sector" OR "specialty chemicals" OR "chemical stocks"',
+                  r"chemicals?|agrochem\w*|fertili[sz]ers?"),
+    "Defence": ("Defence", '"defence stocks" OR "defence sector" OR "defence orders"',
+                r"defen[cs]e|aerospace|missiles?"),
+    "Capital Goods": ("Capital goods", '"capital goods" OR "engineering companies" OR "order inflows"',
+                      r"capital goods|engineering|order inflows?|machinery"),
+    "Travel": ("Travel and hotels", 'hotels OR tourism OR "travel demand" OR hospitality',
+               r"hotels?|tourism|travel|hospitality|restaurants?|QSR"),
+}
+SECTOR_PATTERNS = {key: re.compile(rf"{WORD_START}(?:{words})\b", re.IGNORECASE)
+                   for key, (_, _, words) in SECTOR_TOPICS.items()}
+GLOBAL_TOPICS = {"Energy", "Commodities"}
+# Companies whose news topic is narrower than their sector.
+TOPIC_OF_SYMBOL = {"TATASTEEL": "Steel", "JSWSTEEL": "Steel", "SAIL": "Steel", "JINDALSTEL": "Steel",
+                   "JSL": "Steel", "NMDC": "Steel"}
+
+
+def news_topic(holding: dict) -> str | None:
+    """The sector topic a holding brings news for; None when its sector is unknown."""
+    topic = TOPIC_OF_SYMBOL.get(holding["ticker"].split(".")[0], holding.get("sector"))
+    return topic if topic in SECTOR_TOPICS else None
+
+
+def _take_turns(newest_first: list[dict], groups: dict[str, list[dict]], limit: int) -> list[dict]:
+    """Up to `limit` items, each group adding its newest unused one per round."""
+    waiting = {name: list(items) for name, items in groups.items() if items}
     chosen: dict[str, dict] = {}
     while len(chosen) < limit and waiting:
-        # Each round, every holding adds its newest unused headline, freshest holding first.
         for name in sorted(waiting, key=lambda n: waiting[n][0]["published_at"] or "", reverse=True):
             item = waiting[name].pop(0)
             if len(chosen) < limit:
@@ -157,3 +231,58 @@ def get_holdings_news(holdings: list[dict], limit: int = 20) -> list[dict]:
         waiting = {name: [i for i in items if i["title"] not in chosen] for name, items in waiting.items()}
         waiting = {name: items for name, items in waiting.items() if items}
     return sorted(chosen.values(), key=lambda i: i["published_at"] or "", reverse=True)
+
+
+def get_sector_news(holdings: list[dict], limit: int = 30) -> dict:
+    """Headlines from the last week about the sectors the holdings are in.
+
+    A headline counts when it uses that sector's vocabulary or names a holding
+    in it; anything else the search returns is dropped. Returns the items
+    (newest first, each tagged with its sectors and any holdings it names),
+    the sectors searched with their holdings, and the holdings with no known sector.
+    """
+    topics: dict[str, list[dict]] = {}
+    unmapped = []
+    for h in holdings:
+        topic = news_topic(h)
+        if topic is None:
+            unmapped.append(h["name"])
+        else:
+            topics.setdefault(topic, []).append(h)
+    # Sectors with the most holdings first; beyond the cap they are not searched.
+    ranked = sorted(topics, key=lambda t: -len(topics[t]))[:MAX_SECTORS_SEARCHED]
+    if not ranked:
+        return {"items": [], "sectors": [], "unmapped": unmapped}
+
+    window = f" when:{HOLDINGS_WINDOW_DAYS}d"
+    searched = [h for topic in ranked for h in topics[topic]][:MAX_HOLDINGS_SEARCHED]
+    # World prices drive oil and bullion; for every other sector the search is kept to India.
+    queries = [(SECTOR_TOPICS[topic][1] + ("" if topic in GLOBAL_TOPICS else " India") + window,
+                SECTOR_HEADLINES_PER_QUERY) for topic in ranked] + [
+        (" OR ".join(term for h in searched[start:start + HOLDINGS_PER_QUERY] for term in _search_terms(h)) + window,
+         HEADLINES_PER_QUERY)
+        for start in range(0, len(searched), HOLDINGS_PER_QUERY)
+    ]
+    with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+        batches = list(pool.map(lambda query: get_news(*query), queries))
+
+    found: dict[str, dict] = {}
+    for item in (item for batch in batches for item in batch):
+        if item["title"] in found:
+            continue
+        named = [h for topic in ranked for h in topics[topic] if names_holding(item["title"], h["name"], h["ticker"])]
+        about = [topic for topic in ranked
+                 if SECTOR_PATTERNS[topic].search(item["title"]) or any(h in topics[topic] for h in named)]
+        if about:
+            found[item["title"]] = {**item, "sectors": [SECTOR_TOPICS[t][0] for t in about],
+                                    "holdings": [h["name"] for h in named]}
+    newest_first = sorted(found.values(), key=lambda i: i["published_at"] or "", reverse=True)
+    labels = [SECTOR_TOPICS[topic][0] for topic in ranked]
+    items = newest_first if len(newest_first) <= limit else _take_turns(
+        newest_first, {label: [i for i in newest_first if label in i["sectors"]] for label in labels}, limit)
+    return {
+        "items": items,
+        "sectors": [{"sector": SECTOR_TOPICS[topic][0], "holdings": [h["name"] for h in topics[topic]]}
+                    for topic in ranked],
+        "unmapped": unmapped,
+    }

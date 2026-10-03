@@ -22,6 +22,7 @@ from app.tools import gdelt
 from app.tools.events import load_events
 from app.tools.market import NIFTY, get_macro
 from app.tools.weather import LOCATIONS, get_weather_outlook
+from app.agents.state import inr as indian_rupees
 
 TRAINED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "trained"
 ANALOGUE_RADIUS_KM = 400
@@ -53,7 +54,8 @@ def _trained(name: str) -> dict | None:
 
 
 def _inr(amount: float) -> str:
-    return f"₹{abs(amount):,.0f}"
+    """Rupees without a sign, in Indian digit grouping."""
+    return indian_rupees(abs(amount))
 
 
 def _pct(fraction: float, digits: int = 1) -> str:

@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.ml import alerts, assets, features, radar
+from app.ml import alerts, assets, features, gbm, impact, radar, solutions
 from app.tools import gdelt
 from app.tools import resolver
 from app.tools.market import NIFTY
@@ -47,6 +47,9 @@ def quiet(monkeypatch):
     monkeypatch.setattr(radar, "get_macro", lambda: ([], None))
     monkeypatch.setattr(radar, "daily_turnover", lambda tickers: {})
     monkeypatch.setattr(radar.gdelt, "signals", lambda: {"themes": {}, "scanned_at": None, "stale": True, "error": None})
+    # Without macro history the impact model stands down and the price-only model is used.
+    monkeypatch.setattr(impact, "get_cross_assets", lambda: None)
+    monkeypatch.setattr(impact, "get_weather_history", lambda: None)
 
     def use(frame):
         monkeypatch.setattr(alerts, "get_history", lambda tickers: (frame, "live" if frame is not None else "unavailable"))
@@ -293,3 +296,141 @@ def test_news_scan_stops_on_a_rate_limit_and_keeps_earlier_readings(monkeypatch,
     result = gdelt.signals()
     assert len(calls) == 2 and list(result["themes"]) == ["india_pakistan"]
     assert result["error"] == "rate limited by GDELT" and result["stale"] is False
+
+
+# --------------------------------------------------------------------------- impact model and solutions
+
+
+def test_exported_trees_are_walked_to_the_right_leaf():
+    tree = {"feature": [0, -1, 1, -1, -1], "threshold": [0.5, 0, 10.0, 0, 0],
+            "left": [1, 0, 3, 0, 0], "right": [2, 0, 4, 0, 0], "value": [0, -1.0, 0, 2.0, 3.0]}
+    model = {"features": ["a", "b"], "objective": "regression", "trees": [tree, tree]}
+    assert gbm.predict(model, {"a": 0.5, "b": 99}) == -2.0      # a <= 0.5 goes left
+    assert gbm.predict(model, {"a": 0.6, "b": 10}) == 4.0
+    assert gbm.predict(model, {"a": 0.6, "b": 11}) == 6.0
+    binary = {**model, "objective": "binary", "trees": [tree]}
+    assert gbm.predict(binary, {"a": 0.0, "b": 0}) == pytest.approx(1 / (1 + np.e))
+
+
+def test_the_saved_impact_model_matches_the_feature_code():
+    model = impact.model()
+    assert model["features"] == features.IMPACT_FEATURES
+    assert {"fall", "downside"} == set(model["models"])
+    assert all(m["features"] == features.IMPACT_FEATURES for m in model["models"].values())
+    assert model["fall"]["rate_when_elevated"] > model["fall"]["rate_otherwise"]
+    assert model["sectors"] == impact.sector_codes()
+
+
+def macro(index: pd.DatetimeIndex) -> pd.DataFrame:
+    rng = np.random.default_rng(5)
+    walk = lambda start, spread: start * np.cumprod(1 + rng.normal(0, spread, len(index)))  # noqa: E731
+    return pd.DataFrame({features.VIX: walk(15, 0.03), features.BRENT: walk(80, 0.015),
+                         features.RUPEE: walk(83, 0.002)}, index=index)
+
+
+def test_impact_features_use_only_information_available_that_day():
+    frame = closes()
+    days = features.macro_features(frame[NIFTY], macro(frame.index))
+    before = features.impact_features(frame["AAA.NS"], frame[NIFTY], days, 3, ["2026-09-20"])
+    changed = frame.copy()
+    changed.iloc[-1] *= 1.2      # tomorrow's prices must not change what was known a week earlier
+    after = features.impact_features(changed["AAA.NS"], changed[NIFTY],
+                                     features.macro_features(changed[NIFTY], macro(frame.index)), 3, ["2026-09-20"])
+    row = frame.index[-6]
+    pd.testing.assert_series_equal(before.loc[row, features.IMPACT_FEATURES], after.loc[row, features.IMPACT_FEATURES])
+    assert before["site_alert_days"].loc["2026-09-21":"2026-09-25"].eq(1).all()
+    assert before["site_alert_days"].loc["2026-09-29"] == 0          # more than a week later
+    assert before["forward_return"].iloc[-1] != before["forward_return"].iloc[-1]   # the future is blank
+
+
+def priced(frame: pd.DataFrame) -> list[dict]:
+    return [{"ticker": "AAA.NS", "name": "Alpha Refining", "units": 100.0, "sector": "Energy",
+             "price": float(frame["AAA.NS"].iloc[-1]), "value": float(frame["AAA.NS"].iloc[-1]) * 100}]
+
+
+def test_holdings_are_scored_when_macro_history_is_available(monkeypatch):
+    frame = closes()
+    monkeypatch.setattr(impact, "get_weather_history", lambda: None)
+    monkeypatch.setattr(impact, "get_cross_assets", lambda: macro(frame.index))
+    score = impact.score_positions(priced(frame), frame)["AAA.NS"]
+    assert 0 < score["fall"] < 1 and score["downside"] < 0 and score["usual_downside"] < 0
+    assert score["elevated"] == (score["fall"] >= impact.model()["fall"]["elevated_cutoff"])
+
+    monkeypatch.setattr(impact, "get_cross_assets", lambda: macro(frame.index).drop(columns=[features.VIX]))
+    assert impact.score_positions(priced(frame), frame) is None       # an input is missing: no score, no guess
+
+
+POSITION = {"name": "Alpha Refining", "ticker": "AAA.NS", "units": 100.0, "price": 200.0, "value": 20000.0}
+
+
+def test_protection_is_bought_only_when_it_costs_less_than_the_extra_downside():
+    score = {"fall": 0.2, "downside": -0.10, "usual_downside": -0.04, "elevated": True}
+    cheap = solutions.protect_or_trim(POSITION, score, 0.20, 100000.0, 1.0, 0.057)
+    cost = 20000 * radar.put_cost_fraction(0.20)
+    assert cost < 1200 and cheap["action"] == "hedge"                # extra downside is 2,000 - 800 = 1,200
+    assert f"₹{cost:,.0f}" in cheap["headline"] and "sell 60 of your 100 shares" in cheap["alternative"]
+
+    dear = solutions.protect_or_trim(POSITION, score, 1.50, 100000.0, 1.0, 0.057)
+    assert dear["action"] == "trim" and dear["headline"] == "Trim Alpha Refining by 60 shares, about ₹12,000"
+    assert any("not worth buying" in step for step in dear["steps"])
+    assert {f["label"] for f in dear["figures"]} >= {"Chance of a sharp fall", "Its usual downside"}
+
+
+def test_no_trade_when_the_downside_is_usual_or_the_amount_is_trivial():
+    usual = solutions.protect_or_trim(POSITION, {"fall": 0.2, "downside": -0.04, "usual_downside": -0.05,
+                                                 "elevated": True}, 0.2, 100000.0, 1.0, 0.057)
+    assert usual["action"] == "watch" and "₹192.00" in usual["headline"]        # 200 x (1 - 0.04)
+    small = solutions.protect_or_trim(POSITION, {"fall": 0.2, "downside": -0.051, "usual_downside": -0.05,
+                                                 "elevated": True}, 0.2, 10_000_000.0, 1.0, 0.057)
+    assert small["action"] == "watch" and "no trade is needed" in small["steps"][0]
+
+
+def test_a_flagged_holding_gets_a_risk_alert_with_a_sized_solution(quiet, monkeypatch):
+    frame = closes()
+    quiet(frame)
+    flagged = {"fall": 0.21, "downside": -0.12, "usual_downside": -0.04, "elevated": True}
+    calm = {"fall": 0.03, "downside": -0.03, "usual_downside": -0.04, "elevated": False}
+    monkeypatch.setattr(impact, "score_positions", lambda positions, closes: {"AAA.NS": flagged, "BBB.NS": calm})
+    result = alerts.build_alerts(HOLDINGS)
+
+    (risk,) = by_category(result)["risk"]
+    assert risk["holding"] == "Alpha Refining" and "21% chance of a 5%+ fall this week" in risk["title"]
+    assert risk["solution"]["action"] in ("hedge", "trim") and risk["severity"] == "warning"
+    assert risk["recommendation"].startswith(risk["solution"]["headline"])
+    assert "LightGBM" in risk["basis"] and "price history alone" in risk["basis"]
+
+    ranking = result["risk_ranking"]
+    assert [r["name"] for r in ranking] == ["Alpha Refining", "Beta Bank"]       # largest rupee downside first
+    assert ranking[0]["elevated"] and ranking[0]["downside_amount"] == round(0.12 * frame["AAA.NS"].iloc[-1] * 100)
+    assert result["risk_model"]["name"] == "LightGBM impact model" and result["unavailable"] == []
+
+
+def test_without_macro_data_the_price_only_model_is_used_and_said_so(quiet):
+    quiet(closes(market_shock=True))
+    result = alerts.build_alerts(HOLDINGS)
+    assert result["risk_ranking"] == [] and result["risk_model"]["name"] == "Price-only logistic model"
+    assert any("impact model" in item for item in result["unavailable"])
+    assert all("price-only" in a["basis"] for a in by_category(result)["risk"])
+
+
+def test_concentration_solution_sizes_the_sale_and_its_effect(quiet):
+    frame = closes()
+    quiet(frame)
+    (alert,) = by_category(alerts.build_alerts(HOLDINGS))["concentration"]
+    solution = alert["solution"]
+    assert solution["action"] == "rebalance" and solution["headline"].startswith("Sell ")
+    assert "Alpha Refining" in solution["headline"] and "to bring it to 24%" in solution["headline"]
+    labels = {f["label"]: f["value"] for f in solution["figures"]}
+    before, after = (float(v.replace("₹", "").replace(",", "")) for v in labels["1-day 95% VaR"].split(" → "))
+    assert after < before                                           # the sale lowers risk
+    assert any("Beta Bank (correlation" in step for step in solution["steps"])
+
+
+def test_every_alert_carries_a_solution_and_rupees_use_indian_grouping(quiet):
+    quiet(closes(last_day_move=-0.08))
+    result = alerts.build_alerts(HOLDINGS, scenario="cyclone_gujarat")
+    assert result["alerts"]
+    for alert in result["alerts"]:
+        assert alert["solution"]["action"] in ("hedge", "trim", "rebalance", "watch", "hold", "review")
+        assert alert["solution"]["headline"] and alert["solution"]["steps"]
+    assert solutions.inr(-351300) == "₹3,51,300"

@@ -16,6 +16,10 @@
    against companies with none (NOAA IBTrACS tracks, North Indian Ocean).
 6. Hedge cost: where India VIX and the CBOE VIX stand in their own history,
    and how implied volatility has compared with what followed (FRED, Yahoo).
+7. Impact model: LightGBM trees on prices, macro indicators, sector and
+   weather alert days, for the chance of a sharp fall and the size of the
+   downside over the next five sessions. Compared against price-only models.
+   Needs the training extras:  uv sync --group train
 
 Results are written to data/trained/ as JSON and read by app.ml.alerts.
 """
@@ -23,6 +27,7 @@ Results are written to data/trained/ as JSON and read by app.ml.alerts.
 import csv
 import io
 import json
+import sys
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -31,9 +36,13 @@ import httpx
 import numpy as np
 import pandas as pd
 
-from app.ml import assets
-from app.ml.features import FEATURES, HORIZON, SHOCK_Z, abnormal_returns, risk_features
-from app.tools.market import NIFTY, SECTORS, get_history
+from app.ml import assets, gbm
+from app.ml.impact import company_alert_dates, sector_codes
+from app.ml.features import (
+    DOWNSIDE_LEVEL, FALL_SIZE, FEATURES, HORIZON, IMPACT_FEATURES, MACRO_FEATURES, PRICE_FEATURES, SHOCK_Z,
+    abnormal_returns, impact_features, macro_features, risk_features,
+)
+from app.tools.market import NIFTY, SECTORS, get_cross_assets, get_history
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 TRAINED_DIR = DATA_DIR / "trained"
@@ -140,6 +149,128 @@ def train_shock_model() -> dict:
             "drops": {"cases": int(drops.sum()), "kept_falling": round(float(same_way[drops].mean()), 3)},
             "jumps": {"cases": int(jumps.sum()), "kept_rising": round(float(same_way[jumps].mean()), 3)},
         },
+    }
+
+
+# --------------------------------------------------------------------------- impact model
+
+VALID_FROM = "2021-01-01"   # 2021-22 picks the number of trees; 2023 onwards is only ever tested on
+MAX_TREES = 300
+GBM_PARAMS = {"learning_rate": 0.05, "num_leaves": 8, "min_data_in_leaf": 400, "feature_fraction": 0.8,
+              "bagging_fraction": 0.8, "bagging_freq": 1, "lambda_l2": 5.0, "use_missing": False,
+              "verbose": -1, "seed": 7, "num_threads": 4, "deterministic": True}
+
+
+def impact_dataset() -> tuple[pd.DataFrame, str]:
+    tickers = [f"{symbol}.NS" for symbol in SECTORS]
+    closes, source = get_history(tickers)
+    macro = get_cross_assets()
+    if closes is None or macro is None:
+        raise RuntimeError("Price or macro history unavailable; cannot train")
+    macro_days = macro_features(closes[NIFTY], macro)
+    codes, alerts = sector_codes(), company_alert_dates()
+    rows = []
+    for symbol, sector in SECTORS.items():
+        ticker = f"{symbol}.NS"
+        if ticker not in closes.columns or closes[ticker].notna().sum() < 600:
+            continue
+        days = impact_features(closes[ticker], closes[NIFTY], macro_days, codes[sector], alerts.get(symbol, []))
+        days["ticker"] = ticker
+        rows.append(days.dropna(subset=[*IMPACT_FEATURES, "fall_ahead", "forward_return"]))
+    return pd.concat(rows).sort_index(), source
+
+
+def _fit_gbm(fit: pd.DataFrame, valid: pd.DataFrame, features: list[str], target: str, **objective):
+    """Trees are added until the 2021-22 score stops improving; the model is then
+    refitted on all the years before the test period with that many trees."""
+    import lightgbm as lgb
+
+    params = {**GBM_PARAMS, **objective}
+    early = lgb.train(params, lgb.Dataset(fit[features], fit[target]), MAX_TREES,
+                      valid_sets=[lgb.Dataset(valid[features], valid[target])],
+                      callbacks=[lgb.early_stopping(30, verbose=False)])
+    rounds = max(early.best_iteration, 20)
+    both = pd.concat([fit, valid])
+    return lgb.train(params, lgb.Dataset(both[features], both[target]), rounds), early
+
+
+def _pinball(actual: np.ndarray, predicted: np.ndarray, level: float) -> float:
+    gap = actual - predicted
+    return float(np.mean(np.maximum(level * gap, (level - 1) * gap)))
+
+
+def train_impact_model() -> dict:
+    data, source = impact_dataset()
+    fit, valid = data[data.index < VALID_FROM], data[(data.index >= VALID_FROM) & (data.index < TEST_FROM)]
+    test = data[data.index >= TEST_FROM]
+    y = test["fall_ahead"].to_numpy()
+
+    # The same question asked of one data source and of all of them.
+    feature_sets = {"60-day volatility alone": ["vol_60"], "price history": PRICE_FEATURES,
+                    "price and macro": [*PRICE_FEATURES, *MACRO_FEATURES],
+                    "price, macro, sector and weather": IMPACT_FEATURES}
+    comparison = {}
+    for label, features in feature_sets.items():
+        model, _ = _fit_gbm(fit, valid, features, "fall_ahead", objective="binary")
+        comparison[label] = round(_auc(y, model.predict(test[features])), 3)
+
+    fall, fall_early = _fit_gbm(fit, valid, IMPACT_FEATURES, "fall_ahead", objective="binary")
+    downside, _ = _fit_gbm(fit, valid, IMPACT_FEATURES, "forward_return", objective="quantile", alpha=DOWNSIDE_LEVEL)
+
+    # "Elevated" is the top tenth of days, a cut-off set on 2021-22, which the early model had not seen.
+    cutoff = float(np.quantile(fall_early.predict(valid[IMPACT_FEATURES]), 0.90))
+    p_fall = fall.predict(test[IMPACT_FEATURES])
+    high = p_fall >= cutoff
+
+    actual = test["forward_return"].to_numpy()
+    predicted = downside.predict(test[IMPACT_FEATURES])
+    usual = test["usual_downside"].to_numpy()
+
+    models = {"fall": gbm.export(fall), "downside": gbm.export(downside)}
+    sample = test[IMPACT_FEATURES].iloc[:: max(1, len(test) // 300)]
+    for name, booster in (("fall", fall), ("downside", downside)):
+        ours = np.array([gbm.predict(models[name], row) for row in sample.to_dict("records")])
+        if np.abs(ours - booster.predict(sample)).max() > 1e-9:
+            raise RuntimeError(f"exported {name} model does not reproduce LightGBM")
+
+    gain = dict(zip(IMPACT_FEATURES, fall.feature_importance("gain")))
+    total_gain = sum(gain.values()) or 1.0
+    both = pd.concat([fit, valid])
+    return {
+        "trained_on": date.today().isoformat(),
+        "method": "LightGBM gradient-boosted trees, exported and run without LightGBM on the server",
+        "data": f"{len(data):,} stock-days of {data['ticker'].nunique()} NSE stocks ({source}), with India VIX, "
+                f"Brent and USD/INR from Yahoo Finance and weather alert days from Open-Meteo",
+        "definition": f"Sharp fall: a loss of {FALL_SIZE:.0%} or more over the next {HORIZON} sessions. "
+                      f"Downside: the {HORIZON}-session return that only {DOWNSIDE_LEVEL:.0%} of cases fall below.",
+        "features": IMPACT_FEATURES,
+        "sectors": sector_codes(),
+        "horizon_sessions": HORIZON,
+        "fall_size": FALL_SIZE,
+        "fit_period": f"{both.index[0].date()} to {both.index[-1].date()}",
+        "test_period": f"{test.index[0].date()} to {test.index[-1].date()}",
+        "test_days": int(len(test)),
+        "fall": {
+            "trees": fall.num_trees(),
+            "auc": round(_auc(y, p_fall), 3),
+            "auc_by_data_used": comparison,
+            "base_rate": round(float(y.mean()), 3),
+            "elevated_cutoff": round(cutoff, 4),
+            "share_of_days_elevated": round(float(high.mean()), 3),
+            "rate_when_elevated": round(float(y[high].mean()), 3),
+            "rate_otherwise": round(float(y[~high].mean()), 3),
+            "what_drives_it": {k: round(v / total_gain, 3) for k, v in
+                               sorted(gain.items(), key=lambda kv: -kv[1])[:6]},
+        },
+        "downside": {
+            "trees": downside.num_trees(),
+            "level": DOWNSIDE_LEVEL,
+            "share_of_outcomes_worse": round(float((actual < predicted).mean()), 3),
+            "share_worse_than_usual_downside": round(float((actual < usual).mean()), 3),
+            "pinball_loss": round(_pinball(actual, predicted, DOWNSIDE_LEVEL), 5),
+            "pinball_loss_usual_downside": round(_pinball(actual, usual, DOWNSIDE_LEVEL), 5),
+        },
+        "models": models,
     }
 
 
@@ -419,21 +550,28 @@ def hedge_cost_stats() -> dict:
 
 
 def main() -> None:
+    """Train everything, or only the models named on the command line."""
+    only = set(sys.argv[1:])
     TRAINED_DIR.mkdir(parents=True, exist_ok=True)
     # Power assets come before storm impact, which reads them.
     for name, build in (("shock_model", train_shock_model), ("sentiment_eval", evaluate_sentiment),
                         ("concentration_benchmark", concentration_benchmark),
                         ("power_assets", build_power_assets), ("storm_impact", train_storm_impact),
-                        ("hedge_cost", hedge_cost_stats)):
+                        ("hedge_cost", hedge_cost_stats), ("impact_model", train_impact_model)):
+        if only and name not in only:
+            continue
         print(f"\n=== {name}")
         try:
             result = build()
         except Exception as exc:
             print(f"FAILED: {type(exc).__name__}: {exc}")
             continue
-        (TRAINED_DIR / f"{name}.json").write_text(json.dumps(result, indent=2) + "\n")
+        # The trees are long arrays of numbers, so that file is written without indentation.
+        layout = {"separators": (",", ":")} if "models" in result else {"indent": 2}
+        (TRAINED_DIR / f"{name}.json").write_text(json.dumps(result, **layout) + "\n")
         assets.load_assets.cache_clear()
-        summary = {k: v for k, v in result.items() if k not in ("mean", "std", "percentiles", "plants", "library")}
+        summary = {k: v for k, v in result.items()
+                   if k not in ("mean", "std", "percentiles", "plants", "library", "models")}
         print(json.dumps(summary, indent=2))
 
 

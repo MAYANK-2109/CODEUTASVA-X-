@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app import api
@@ -92,67 +93,121 @@ def test_headline_matching_needs_the_company_named_as_a_whole_word():
     assert not names_holding("Oil prices rise on supply fears", "Oil & Natural Gas Corp", "ONGC.NS")
     assert not names_holding("Banks rally after policy", "HDFC Bank", "HDFCBANK.NS")
     assert names_holding("SBI raises lending rates", "State Bank of India", "SBIN.NS")       # initials of a long name
+    assert not names_holding("ED cracks down on GST ITC fraud", "ITC", "ITC.NS")             # input tax credit
+    assert not names_holding("Authority upholds ITC demand in input tax dispute", "ITC", "ITC.NS")
     assert not names_holding("Rabi sowing picks up", "State Bank of India", "SBIN.NS")
 
 
 HELD = [
-    {"name": "Reliance Industries", "symbol": "RELIANCE", "units": 5, "type": "STOCK"},
-    {"name": "ITC", "symbol": "ITC", "units": 10, "type": "STOCK"},
+    {"name": "Tata Steel", "symbol": "TATASTEEL", "units": 5, "type": "STOCK"},
+    {"name": "HDFC Bank", "symbol": "HDFCBANK", "units": 10, "type": "STOCK"},
     {"name": "Some Bluechip Fund", "symbol": "", "units": 3, "type": "MF"},
 ]
 
 
-def test_news_keeps_only_headlines_that_name_a_holding(monkeypatch):
+def headline(title: str, when: str, url: str | None = None) -> dict:
+    return {"title": title, "source": "Wire", "url": url or title, "published_at": f"2026-10-{when}:00:00+00:00"}
+
+
+@pytest.fixture
+def no_lookups(monkeypatch):
+    """No ticker search and no sector lookup; a test that needs a sector supplies it."""
+    monkeypatch.setattr(api.resolver, "search", lambda query: None)
+    monkeypatch.setattr(api.sectors, "resolve", lambda tickers: {t: "Other" for t in tickers})
+
+
+def test_news_trail_keeps_only_headlines_about_the_sectors_held(monkeypatch, no_lookups):
     feed = [
-        {"title": "Sensex ends flat ahead of policy", "source": "A", "url": "u1", "published_at": "2026-10-03T09:00:00+00:00"},
-        {"title": "ITC posts higher profit", "source": "B", "url": "u2", "published_at": "2026-10-02T09:00:00+00:00"},
-        {"title": "Reliance and ITC lead gains", "source": "C", "url": "u3", "published_at": "2026-10-03T10:00:00+00:00"},
-        {"title": "Some Bluechip Fund cuts expense ratio", "source": "D", "url": "u4", "published_at": "2026-10-03T11:00:00+00:00"},
-        {"title": "ITC posts higher profit", "source": "E", "url": "u5", "published_at": "2026-10-01T09:00:00+00:00"},
+        headline("Sensex ends flat ahead of policy", "03T09"),
+        headline("Steel prices rise as China cuts output", "03T10"),
+        headline("JSW Steel to add capacity in Odisha", "03T08"),            # a peer: same sector
+        headline("RBI keeps repo rate unchanged", "02T09"),
+        headline("HDFC Bank appoints new chief", "02T08"),                   # names a holding
+        headline("Car sales jump 12% in September", "03T11"),                # a sector not held
+        headline("Some Bluechip Fund cuts expense ratio", "03T12"),          # funds are not stocks
+        headline("Steel prices rise as China cuts output", "01T09", "dup"),
     ]
     asked = []
     monkeypatch.setattr(news, "get_news", lambda query, limit=8: asked.append(query) or feed)
-    monkeypatch.setattr(api.resolver, "search", lambda query: None)
 
     body = client.post("/api/news", json={"holdings": HELD}).json()
-    assert [i["title"] for i in body["items"]] == ["Reliance and ITC lead gains", "ITC posts higher profit"]   # newest first, no repeat
-    assert body["items"][0]["holdings"] == ["Reliance Industries", "ITC"]
-    assert body["portfolio_source"] == "user" and body["holdings"] == 2      # the fund is not a stock
-    assert len(asked) == 1 and '"Reliance Industries"' in asked[0] and asked[0].endswith("when:7d")
-    assert "Bluechip" not in asked[0]
+    by_title = {i["title"]: i for i in body["items"]}
+    assert list(by_title) == ["Steel prices rise as China cuts output", "JSW Steel to add capacity in Odisha",
+                              "RBI keeps repo rate unchanged", "HDFC Bank appoints new chief"]   # newest first
+    assert by_title["Steel prices rise as China cuts output"]["sectors"] == ["Steel"]
+    assert by_title["HDFC Bank appoints new chief"] == {**by_title["HDFC Bank appoints new chief"],
+                                                         "sectors": ["Banking"], "holdings": ["HDFC Bank"]}
+    assert by_title["RBI keeps repo rate unchanged"]["holdings"] == []
+
+    assert body["sectors"] == [{"sector": "Steel", "holdings": ["Tata Steel"]},
+                               {"sector": "Banking", "holdings": ["HDFC Bank"]}]
+    assert body["unmapped"] == [] and body["portfolio_source"] == "user" and body["holdings"] == 2
+    # One search per sector held and one for the companies; nothing about cars or funds.
+    assert len(asked) == 3 and all(query.endswith("when:7d") for query in asked)
+    assert any('"steel sector"' in q and q.endswith("India when:7d") for q in asked)   # kept to India
+    assert any('"Tata Steel"' in q for q in asked)
+    assert not any("car sales" in q or "Bluechip" in q for q in asked)
 
 
-def test_news_for_many_holdings_is_searched_in_batches_and_limited(monkeypatch):
-    many = [{"name": f"Company{n} Works", "symbol": f"CO{chr(65 + n)}X", "units": 1, "type": "STOCK"} for n in range(8)]
-    asked = []
-
-    def feed(query, limit=8):
-        asked.append(query)
-        return [{"title": f"Company{n} Works wins order", "source": "W", "url": f"u{n}",
-                 "published_at": f"2026-10-0{n + 1}T09:00:00+00:00"} for n in range(8) if f'"Company{n} Works"' in query]
-
-    monkeypatch.setattr(news, "get_news", feed)
-    monkeypatch.setattr(api.resolver, "search", lambda query: None)
-    body = client.post("/api/news", json={"holdings": many, "limit": 3}).json()
-    assert len(asked) == 2                                                     # six holdings per search
-    assert [i["holdings"] for i in body["items"]] == [["Company7 Works"], ["Company6 Works"], ["Company5 Works"]]
-
-
-def test_news_without_holdings_uses_the_sample_portfolio(monkeypatch):
+def test_a_holding_outside_the_sector_map_is_looked_up(monkeypatch, no_lookups):
+    held = [{"name": "Pidilite Industries", "symbol": "PIDILITIND", "units": 4, "type": "STOCK"},
+            {"name": "Mystery Corp", "symbol": "MYSTERY", "units": 1, "type": "STOCK"}]
+    monkeypatch.setattr(api.sectors, "resolve", lambda tickers: {"PIDILITIND.NS": "Chemicals", "MYSTERY.NS": "Other"})
     monkeypatch.setattr(news, "get_news", lambda query, limit=8: [
-        {"title": "NTPC commissions new unit", "source": "W", "url": "u", "published_at": None},
-        {"title": "Gold prices steady", "source": "W", "url": "v", "published_at": None}])
+        headline("Specialty chemicals makers see export recovery", "03T09"),
+        headline("Mystery Corp wins an award", "03T10")])
+    body = client.post("/api/news", json={"holdings": held}).json()
+    assert [i["title"] for i in body["items"]] == ["Specialty chemicals makers see export recovery"]
+    assert body["sectors"] == [{"sector": "Chemicals", "holdings": ["Pidilite Industries"]}]
+    assert body["unmapped"] == ["Mystery Corp"]          # no sector found: said so, not guessed
+
+
+def test_a_sector_in_the_news_all_week_does_not_crowd_out_the_others(monkeypatch, no_lookups):
+    steel = [headline(f"Steel output update {n}", f"03T0{n}") for n in range(6)]
+    bank = [headline("Banks report steady credit growth", "01T09")]
+    monkeypatch.setattr(news, "get_news", lambda query, limit=8: steel + bank)
+    titles = [i["title"] for i in client.post("/api/news", json={"holdings": HELD, "limit": 3}).json()["items"]]
+    assert titles == ["Steel output update 5", "Steel output update 4", "Banks report steady credit growth"]
+
+
+def test_news_without_holdings_uses_the_sample_portfolio(monkeypatch, no_lookups):
+    monkeypatch.setattr(news, "get_news", lambda query, limit=8: [
+        headline("Power demand hits a record high", "03T09"), headline("Monsoon withdraws from Kerala", "03T08")])
     body = client.get("/api/news").json()
     assert body["portfolio_source"] == "sample"
-    assert [i["title"] for i in body["items"]] == ["NTPC commissions new unit"]
+    assert [i["title"] for i in body["items"]] == ["Power demand hits a record high"]
+    assert {"sector": "Power", "holdings": ["NTPC"]} in body["sectors"]
     assert client.post("/api/news", json={}).json()["portfolio_source"] == "sample"
 
 
-def test_a_holding_in_the_news_all_week_does_not_crowd_out_the_others(monkeypatch):
-    busy = [{"title": f"Reliance Industries update {n}", "source": "W", "url": f"r{n}",
-             "published_at": f"2026-10-03T0{n}:00:00+00:00"} for n in range(6)]
-    quiet = [{"title": "ITC opens a new plant", "source": "W", "url": "i", "published_at": "2026-09-29T09:00:00+00:00"}]
-    monkeypatch.setattr(news, "get_news", lambda query, limit=8: busy + quiet)
-    monkeypatch.setattr(api.resolver, "search", lambda query: None)
-    titles = [i["title"] for i in client.post("/api/news", json={"holdings": HELD, "limit": 3}).json()["items"]]
+def test_company_news_search_still_takes_turns_between_holdings(monkeypatch):
+    held = [{"name": "Reliance Industries", "ticker": "RELIANCE.NS"}, {"name": "ITC", "ticker": "ITC.NS"}]
+    busy = [headline(f"Reliance Industries update {n}", f"03T0{n}") for n in range(6)]
+    monkeypatch.setattr(news, "get_news", lambda query, limit=8: busy + [headline("ITC opens a new plant", "01T09")])
+    titles = [i["title"] for i in news.get_holdings_news(held, limit=3)]
     assert titles == ["Reliance Industries update 5", "Reliance Industries update 4", "ITC opens a new plant"]
+
+
+def test_sector_words_must_be_about_the_sector():
+    cases = [("Energy", "Crude oil climbs above 100 dollars", True), ("Energy", "Edible oil imports jump", False),
+             ("IT", "Nifty IT index slips 2%", True), ("IT", "Is it sector rotation time?", False),
+             ("Utilities", "Power demand hits record high", True), ("Utilities", "The power of compounding", False),
+             ("Steel", "Steelmakers raise prices", True), ("Auto", "Autonomous region votes", False)]
+    for sector, title, expected in cases:
+        assert bool(news.SECTOR_PATTERNS[sector].search(title)) == expected, title
+
+
+def test_sector_classification_from_yahoo_names():
+    from app.tools import sectors
+
+    assert sectors.classify("Basic Materials", "Steel") == "Metals"
+    assert sectors.classify("Basic Materials", "Specialty Chemicals") == "Chemicals"
+    assert sectors.classify("Financial Services", "Banks - Regional") == "Banking"
+    assert sectors.classify("Industrials", "Aerospace & Defense") == "Defence"
+    assert sectors.classify("Consumer Cyclical", "Travel Services") == "Travel"
+    assert sectors.classify("Technology", "Something New") == "IT"          # falls back to the broad sector
+    assert sectors.classify(None, None) is None
+    assert sectors.known("TATASTEEL.NS") == "Metals"                         # the built-in map needs no lookup
+    assert news.news_topic({"ticker": "TATASTEEL.NS", "sector": "Metals"}) == "Steel"
+    assert news.news_topic({"ticker": "HINDALCO.NS", "sector": "Metals"}) == "Metals"
+    assert news.news_topic({"ticker": "X.NS", "sector": "Other"}) is None

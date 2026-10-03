@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover } from '../lib/holdings'
 import { onOpenAlerts, publishAlerts } from '../lib/alerts'
-import type { AlertHedge as Hedge, AlertsResult, Severity } from '../lib/alerts'
+import type { Alert, AlertsResult, HoldingRisk, RiskModel, Severity, SolutionAction } from '../lib/alerts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -20,10 +20,14 @@ const SEVERITY: Record<Severity, { mark: string; label: string; chip: string; bo
 }
 const NEEDS_ATTENTION: Severity[] = ['critical', 'warning']
 
-const HEDGE_ACTION: Record<Hedge['action'], { label: string; chip: string }> = {
-  hedge: { label: 'Hedge recommended', chip: 'bg-red-50 text-red-600' },
-  monitor: { label: 'Monitor, no hedge', chip: 'bg-amber-50 text-amber-700' },
-  none: { label: 'No hedge needed', chip: 'bg-groww-green-light text-groww-green' },
+// The action a solution asks for. Each has its own word, so colour is never the only cue.
+const ACTION: Record<SolutionAction, { label: string; chip: string }> = {
+  hedge: { label: 'Hedge', chip: 'bg-red-50 text-red-600' },
+  trim: { label: 'Trim', chip: 'bg-amber-50 text-amber-700' },
+  rebalance: { label: 'Rebalance', chip: 'bg-amber-50 text-amber-700' },
+  review: { label: 'Review', chip: 'bg-amber-50 text-amber-700' },
+  watch: { label: 'Watch', chip: 'bg-gray-100 text-groww-text-secondary' },
+  hold: { label: 'Hold', chip: 'bg-groww-green-light text-groww-green' },
 }
 
 const inr = (value: number) =>
@@ -44,6 +48,151 @@ const writeIds = (key: string, ids: string[]) => {
   }
 }
 
+const percent = (fraction: number, digits = 0) => `${(Math.abs(fraction) * 100).toFixed(digits)}%`
+
+// ---------------------------------------------------------------------------
+// One alert: what happened, then the recommended action with its steps
+// ---------------------------------------------------------------------------
+const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
+  const style = SEVERITY[alert.severity]
+  const { solution } = alert
+  // Alerts that need attention open with their steps; the rest show the action and expand on request.
+  const [open, setOpen] = useState(NEEDS_ATTENTION.includes(alert.severity) || Boolean(alert.hedge?.drill))
+  return (
+    <li className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
+      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
+        <span aria-hidden>{style.mark}</span>
+        {style.label}
+      </span>
+      <p className="mt-1.5 text-sm font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
+      <p className="mt-1 text-xs text-groww-text-secondary leading-relaxed">{alert.detail}</p>
+
+      <div className="alert-solution mt-2 rounded-xl bg-groww-bg-primary border border-groww-border-light px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Recommended action</span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${ACTION[solution.action].chip}`}>
+            {ACTION[solution.action].label}
+          </span>
+        </div>
+        <p className="mt-1 text-[13px] font-semibold text-groww-text-primary leading-snug">{solution.headline}</p>
+
+        {open && (
+          <>
+            {solution.figures.length > 0 && (
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                {solution.figures.map((figure) => (
+                  <div key={figure.label}>
+                    <dt className="text-groww-text-muted">{figure.label}</dt>
+                    <dd className="font-semibold text-groww-text-primary tabular-nums">{figure.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <ol className="mt-2 flex flex-col gap-1.5 text-xs text-groww-text-primary leading-relaxed">
+              {solution.steps.map((step, index) => (
+                <li key={index} className="flex gap-2">
+                  <span className="shrink-0 w-4 h-4 mt-0.5 rounded-full bg-white border border-groww-border text-[10px] font-bold text-groww-text-secondary flex items-center justify-center">
+                    {index + 1}
+                  </span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+            {solution.alternative && (
+              <p className="mt-2 pt-2 border-t border-groww-border-light text-[11px] text-groww-text-secondary leading-relaxed">
+                <span className="font-semibold text-groww-text-primary">Alternative: </span>
+                {solution.alternative}
+              </p>
+            )}
+          </>
+        )}
+        <button
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="mt-2 text-[11px] font-semibold text-groww-green hover:text-groww-green-dark"
+        >
+          {open ? 'Hide steps' : `Show ${solution.steps.length} step${solution.steps.length === 1 ? '' : 's'} and figures`}
+        </button>
+      </div>
+
+      {open && (
+        <p className="mt-2 text-[11px] text-groww-text-muted leading-relaxed">
+          <span className="font-semibold">Based on: </span>
+          {alert.basis}
+        </p>
+      )}
+    </li>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Risk forecast: every holding as the impact model scores it for the week ahead
+// ---------------------------------------------------------------------------
+const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }> = ({ ranking, model }) => {
+  if (ranking.length === 0) {
+    return (
+      <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">
+        The impact model could not score your holdings this time, because its macro data was unavailable.
+      </p>
+    )
+  }
+  const highest = Math.max(...ranking.map((row) => row.fall))
+  const fallSize = percent(model?.fall_size ?? 0.05)
+  const sessions = model?.horizon_sessions ?? 5
+  return (
+    <div id="alerts-forecast" className="px-4 py-3">
+      <table className="w-full text-xs tabular-nums">
+        <caption className="text-left text-[11px] text-groww-text-secondary pb-2">
+          The next {sessions} sessions for each holding, largest rupee downside first.
+        </caption>
+        <thead>
+          <tr className="text-left text-[11px] text-groww-text-muted">
+            <th className="font-medium pb-1.5">Holding</th>
+            <th className="font-medium pb-1.5">Chance of a {fallSize}+ fall</th>
+            <th className="font-medium pb-1.5 text-right">Downside, 1 in 20</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ranking.map((row) => (
+            <tr key={row.name} className="border-t border-groww-border-light align-top">
+              <td className="py-2 pr-2">
+                <span className="font-semibold text-groww-text-primary">{row.name}</span>
+                <span className="block text-[11px] text-groww-text-muted">{percent(row.weight)} of portfolio</span>
+              </td>
+              <td className="py-2 pr-2 w-[104px]">
+                <span className="flex items-center gap-2">
+                  <span className="relative flex-1 h-1.5 rounded-full bg-gray-100" aria-hidden>
+                    <span
+                      className={`absolute inset-y-0 left-0 rounded-full ${row.elevated ? 'bg-red-500' : 'bg-gray-400'}`}
+                      style={{ width: `${Math.max(4, (row.fall / highest) * 100)}%` }}
+                    />
+                  </span>
+                  <span className="w-8 text-right font-semibold text-groww-text-primary">{percent(row.fall)}</span>
+                </span>
+                {row.elevated && <span className="block text-[11px] font-semibold text-red-600">▲ Elevated</span>}
+              </td>
+              <td className="py-2 text-right whitespace-nowrap">
+                <span className="font-semibold text-groww-text-primary">{inr(row.downside_amount)}</span>
+                <span className="block text-[11px] text-groww-text-muted">
+                  −{percent(row.downside, 1)} · usual −{percent(row.usual_downside, 1)}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {model?.rate_when_elevated !== undefined && model.rate_otherwise !== undefined && (
+        <p className="mt-3 text-[11px] text-groww-text-muted leading-relaxed">
+          {model.name}, tested on {model.tested_on.replace(' to ', ' – ')}: on days it flagged, a fall of {fallSize} or
+          more followed {percent(model.rate_when_elevated)} of the time, against {percent(model.rate_otherwise)} otherwise.
+          AUC {model.auc} using price, macro, sector and weather data; {model.auc_price_only} from price history alone.
+          Downside is the loss that only one week in twenty should exceed.
+        </p>
+      )}
+    </div>
+  )
+}
+
 const NotificationBell: React.FC = () => {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
@@ -53,6 +202,7 @@ const NotificationBell: React.FC = () => {
   const [seen, setSeen] = useState<string[]>([])
   const [drills, setDrills] = useState<{ id: string; title: string }[]>([])
   const [scenario, setScenario] = useState('')
+  const [tab, setTab] = useState<'alerts' | 'forecast'>('alerts')
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
   )
@@ -222,6 +372,27 @@ const NotificationBell: React.FC = () => {
             )}
           </header>
 
+          <div className="flex border-b border-groww-border-light text-xs font-semibold" role="tablist">
+            {([['alerts', `Alerts${result ? ` (${alerts.length})` : ''}`], ['forecast', 'Risk forecast']] as const).map(
+              ([id, label]) => (
+                <button
+                  key={id}
+                  id={`alerts-tab-${id}`}
+                  role="tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                  className={`flex-1 py-2 border-b-2 transition-colors ${
+                    tab === id
+                      ? 'border-groww-green text-groww-green'
+                      : 'border-transparent text-groww-text-secondary hover:text-groww-text-primary'
+                  }`}
+                >
+                  {label}
+                </button>
+              ),
+            )}
+          </div>
+
           <div className="flex-1 overflow-y-auto">
             {failed && !result && (
               <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">
@@ -231,73 +402,20 @@ const NotificationBell: React.FC = () => {
             {loading && !result && !failed && (
               <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">Checking your holdings…</p>
             )}
-            {result && alerts.length === 0 && (
+            {result && tab === 'forecast' && <RiskForecast ranking={result.risk_ranking ?? []} model={result.risk_model} />}
+            {result && tab === 'alerts' && alerts.length === 0 && (
               <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">
                 Nothing needs your attention. No sudden moves, losses beyond normal risk, or negative news were
                 found.
               </p>
             )}
-            <ul>
-              {alerts.map((alert) => {
-                const style = SEVERITY[alert.severity]
-                return (
-                  <li key={alert.id} className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
-                      <span aria-hidden>{style.mark}</span>
-                      {style.label}
-                    </span>
-                    <p className="mt-1.5 text-sm font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
-                    <p className="mt-1 text-xs text-groww-text-secondary leading-relaxed">{alert.detail}</p>
-                    {alert.hedge && (
-                      <div className="mt-2 rounded-xl bg-groww-bg-primary border border-groww-border-light px-3 py-2">
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${HEDGE_ACTION[alert.hedge.action].chip}`}>
-                          {HEDGE_ACTION[alert.hedge.action].label}
-                        </span>
-                        <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-                          <div>
-                            <dt className="text-groww-text-muted">Expected {alert.hedge.expected_loss >= 0 ? 'loss' : 'gain'}</dt>
-                            <dd className="font-semibold text-groww-text-primary tabular-nums">{inr(Math.abs(alert.hedge.expected_loss))}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-groww-text-muted">Already priced in</dt>
-                            <dd className="font-semibold text-groww-text-primary tabular-nums">
-                              {alert.hedge.priced_in === null ? '—' : `${Math.round(alert.hedge.priced_in * 100)}%`}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-groww-text-muted">Cost of protection</dt>
-                            <dd className="font-semibold text-groww-text-primary tabular-nums">
-                              {alert.hedge.cost === null ? '—' : inr(alert.hedge.cost)}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-groww-text-muted">Signal confidence</dt>
-                            <dd className="font-semibold text-groww-text-primary">{alert.hedge.confidence}</dd>
-                          </div>
-                          {alert.hedge.instrument && (
-                            <div className="col-span-2">
-                              <dt className="text-groww-text-muted">Hedge</dt>
-                              <dd className="font-semibold text-groww-text-primary">
-                                {alert.hedge.instrument}
-                                {alert.hedge.notional !== null && `, ${inr(alert.hedge.notional)}`}
-                              </dd>
-                            </div>
-                          )}
-                        </dl>
-                      </div>
-                    )}
-                    <p className="mt-2 text-xs text-groww-text-primary leading-relaxed">
-                      <span className="font-semibold">What to do: </span>
-                      {alert.recommendation}
-                    </p>
-                    <p className="mt-1.5 text-[11px] text-groww-text-muted leading-relaxed">
-                      <span className="font-semibold">Based on: </span>
-                      {alert.basis}
-                    </p>
-                  </li>
-                )
-              })}
-            </ul>
+            {tab === 'alerts' && (
+              <ul>
+                {alerts.map((alert) => (
+                  <AlertItem key={alert.id} alert={alert} />
+                ))}
+              </ul>
+            )}
             {result && result.unavailable.length > 0 && (
               <p className="px-4 py-2 text-[11px] text-amber-700 bg-amber-50">
                 Some checks could not run: {result.unavailable.join(', ')}.
@@ -308,7 +426,7 @@ const NotificationBell: React.FC = () => {
           <footer className="px-4 py-2.5 border-t border-groww-border-light bg-groww-bg-primary flex items-center justify-between gap-3 text-[11px] text-groww-text-muted">
             <span>
               {result?.risk_model
-                ? `Risk model AUC ${result.risk_model.auc} on ${result.risk_model.tested_on.replace(' to ', ' – ')}`
+                ? `${result.risk_model.name}, AUC ${result.risk_model.auc} on ${result.risk_model.tested_on.replace(' to ', ' – ')}`
                 : 'Rechecked every 3 minutes'}
             </span>
             {permission === 'default' && (

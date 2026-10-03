@@ -302,7 +302,10 @@ const RiskTerminal: React.FC<{ backendUrl: string; refreshKey?: number }> = ({ b
                   </span>
                   <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
-                    <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">{alert.recommendation}</p>
+                    <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">
+                      <span className="font-semibold text-groww-text-primary">Action: </span>
+                      {alert.solution?.headline ?? alert.recommendation}
+                    </p>
                   </div>
                 </li>
               ))}

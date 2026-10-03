@@ -14,7 +14,13 @@ interface NewsItem {
   source: string | null
   url: string | null
   published_at: string | null
-  // The holdings this headline names.
+  // The sectors this headline is about, and any holdings it names.
+  sectors: string[]
+  holdings: string[]
+}
+
+interface NewsSector {
+  sector: string
   holdings: string[]
 }
 
@@ -222,7 +228,12 @@ const DashboardPage: React.FC = () => {
   const [newsLoading, setNewsLoading] = useState(true)
   const [newsFilter, setNewsFilter] = useState('ALL')
   const [newsFailed, setNewsFailed] = useState(false)
-  const [newsScope, setNewsScope] = useState<{ source: 'user' | 'sample'; windowDays: number } | null>(null)
+  const [newsScope, setNewsScope] = useState<{
+    source: 'user' | 'sample'
+    windowDays: number
+    sectors: NewsSector[]
+    unmapped: string[]
+  } | null>(null)
   const [newsSearch, setNewsSearch] = useState('')
   // Bumped by the refresh button so the risk overview reloads with everything else.
   const [refreshKey, setRefreshKey] = useState(0)
@@ -369,7 +380,7 @@ const DashboardPage: React.FC = () => {
     }
   }, [user?.id, backendUrl])
 
-  // ── Fetch News Trail Data: only headlines that name a stock the user holds ──
+  // ── Fetch News Trail Data: only headlines about the sectors the user holds ──
   const fetchNewsData = useCallback(async () => {
     if (!user?.id) return
     setNewsLoading(true)
@@ -392,10 +403,16 @@ const DashboardPage: React.FC = () => {
           source: item.source,
           url: item.url,
           published_at: item.published_at,
+          sectors: item.sectors ?? [],
           holdings: item.holdings ?? [],
         }))
       )
-      setNewsScope({ source: data.portfolio_source, windowDays: data.window_days })
+      setNewsScope({
+        source: data.portfolio_source,
+        windowDays: data.window_days,
+        sectors: Array.isArray(data.sectors) ? data.sectors : [],
+        unmapped: Array.isArray(data.unmapped) ? data.unmapped : [],
+      })
       setNewsFailed(false)
     } catch {
       // The list keeps whatever was last fetched; with nothing fetched it says so.
@@ -429,21 +446,24 @@ const DashboardPage: React.FC = () => {
     fetchMarketData()
   }, [fetchPortfolioData, fetchNewsData])
 
-  // One filter per holding that has a headline, most headlines first.
-  const newsHoldings = useMemo(() => {
-    const counts = new Map<string, number>()
-    news.forEach((item) => item.holdings.forEach((name) => counts.set(name, (counts.get(name) ?? 0) + 1)))
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])
-  }, [news])
-  // A holding that drops out of the news after a refresh falls back to all headlines.
-  const activeNewsFilter = newsHoldings.some(([name]) => name === newsFilter) ? newsFilter : 'ALL'
+  // One filter per sector held, in the order the backend ranks them, with its headline count.
+  const newsSectors = useMemo(
+    () =>
+      (newsScope?.sectors ?? []).map((entry) => ({
+        ...entry,
+        count: news.filter((item) => item.sectors.includes(entry.sector)).length,
+      })),
+    [news, newsScope]
+  )
+  // A sector that drops out after a refresh falls back to all headlines.
+  const activeNewsFilter = newsSectors.some((entry) => entry.sector === newsFilter) ? newsFilter : 'ALL'
 
   const filteredNews = useMemo(() => {
     const search = newsSearch.toLowerCase()
     return news.filter(
       (item) =>
         (item.title.toLowerCase().includes(search) || (item.source ?? '').toLowerCase().includes(search)) &&
-        (activeNewsFilter === 'ALL' || item.holdings.includes(activeNewsFilter))
+        (activeNewsFilter === 'ALL' || item.sectors.includes(activeNewsFilter))
     )
   }, [news, newsSearch, activeNewsFilter])
 
@@ -651,7 +671,7 @@ const DashboardPage: React.FC = () => {
                 </div>
               </section>
 
-              {/* ── 2. NEWS TRAIL CARD (headlines that name the user's holdings) ── */}
+              {/* ── 2. NEWS TRAIL CARD (headlines about the sectors the user holds) ── */}
               <section
                 id="news-trail-card"
                 className="bg-white rounded-2xl sm:rounded-3xl border border-groww-border-light shadow-card p-6 flex flex-col transition-all duration-200"
@@ -662,13 +682,13 @@ const DashboardPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold text-groww-text-primary tracking-tight">Market News Trail</h3>
                       <span id="news-scope" className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700">
-                        {newsScope?.source === 'sample' ? 'Sample portfolio' : 'Your holdings'}
+                        {newsScope?.source === 'sample' ? 'Sample portfolio' : 'Your sectors'}
                       </span>
                     </div>
                     <p className="text-xs text-groww-text-muted mt-0.5">
                       {newsScope?.source === 'sample'
-                        ? 'No stock holdings saved yet, so these headlines name the sample portfolio\'s stocks'
-                        : 'Only headlines that name a stock you hold'}
+                        ? 'No stock holdings saved yet, so this shows the sectors of the sample portfolio'
+                        : 'Only headlines about the sectors your stocks are in'}
                     </p>
                   </div>
 
@@ -700,29 +720,46 @@ const DashboardPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* One pill per holding that has a headline */}
-                <div id="news-holding-filters" className="flex items-center gap-2 py-3 overflow-x-auto no-scrollbar">
-                  {[['ALL', news.length] as [string, number], ...newsHoldings].map(([name, count]) => (
+                {/* One pill per sector held; hovering shows which holdings put it there */}
+                <div id="news-sector-filters" className="flex items-center gap-2 pt-3 pb-2 overflow-x-auto no-scrollbar">
+                  {[{ sector: 'ALL', holdings: [] as string[], count: news.length }, ...newsSectors].map((entry) => (
                     <button
-                      key={name}
-                      onClick={() => setNewsFilter(name)}
-                      aria-pressed={activeNewsFilter === name}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 ${activeNewsFilter === name
+                      key={entry.sector}
+                      onClick={() => setNewsFilter(entry.sector)}
+                      aria-pressed={activeNewsFilter === entry.sector}
+                      title={entry.holdings.length ? `Because you hold ${entry.holdings.join(', ')}` : undefined}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 ${activeNewsFilter === entry.sector
                           ? 'bg-groww-green text-white shadow-sm'
                           : 'bg-gray-100 text-groww-text-secondary hover:bg-gray-200'
                         }`}
                     >
-                      {name === 'ALL' ? 'All' : name} <span className="font-normal opacity-80">{count}</span>
+                      {entry.sector === 'ALL' ? 'All' : entry.sector}{' '}
+                      <span className="font-normal opacity-80">{entry.count}</span>
                     </button>
                   ))}
                 </div>
+                {/* Why each sector is here: the holdings behind it */}
+                {newsScope && newsScope.sectors.length > 0 && (
+                  <p id="news-sector-basis" className="pb-2 text-[11px] text-groww-text-muted leading-relaxed">
+                    {(activeNewsFilter === 'ALL'
+                      ? newsScope.sectors
+                      : newsScope.sectors.filter((entry) => entry.sector === activeNewsFilter)
+                    )
+                      .map((entry) => `${entry.sector}: ${entry.holdings.join(', ')}`)
+                      .join(' · ')}
+                    {newsScope.unmapped.length > 0 &&
+                      ` · No sector found for ${newsScope.unmapped.join(', ')}, so no news is shown for ${
+                        newsScope.unmapped.length === 1 ? 'it' : 'them'
+                      }.`}
+                  </p>
+                )}
 
                 {/* News Trail Timeline / List */}
                 <div className="relative mt-2 divide-y divide-gray-100 max-h-[560px] overflow-y-auto pr-1">
                   {newsLoading && news.length === 0 ? (
                     <div className="py-12 flex flex-col items-center justify-center gap-3">
                       <div className="w-8 h-8 border-3 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
-                      <p className="text-xs text-groww-text-muted">Searching for headlines on your holdings…</p>
+                      <p className="text-xs text-groww-text-muted">Searching for news on your sectors…</p>
                     </div>
                   ) : filteredNews.length === 0 ? (
                     <div className="py-12 text-center">
@@ -731,14 +768,16 @@ const DashboardPage: React.FC = () => {
                           ? 'No articles found'
                           : newsFailed
                             ? 'News is unavailable right now'
-                            : 'No headlines name your holdings'}
+                            : 'No news on your sectors'}
                       </p>
                       <p className="text-xs text-groww-text-muted mt-1">
                         {news.length > 0
-                          ? 'Try a different keyword or holding.'
+                          ? 'Try a different keyword or sector.'
                           : newsFailed
                             ? 'The news feed could not be reached. Use refresh to try again.'
-                            : `Nothing published in the last ${newsScope?.windowDays ?? 7} days names a stock you hold.`}
+                            : newsScope && newsScope.sectors.length === 0
+                              ? 'No sector could be found for your holdings, so there is nothing to search for.'
+                              : `Nothing published in the last ${newsScope?.windowDays ?? 7} days is about the sectors you hold.`}
                       </p>
                     </div>
                   ) : (
@@ -761,8 +800,13 @@ const DashboardPage: React.FC = () => {
                               {item.source || 'News'}
                             </span>
                             <span className="text-[11px] font-semibold text-groww-text-secondary">
-                              {item.holdings.join(', ')}
+                              {item.sectors.join(', ')}
                             </span>
+                            {item.holdings.length > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                                Names {item.holdings.join(', ')}
+                              </span>
+                            )}
                             <span className="text-[11px] text-groww-text-muted flex items-center gap-1 ml-auto">
                               <IconClock />
                               {timeAgo(item.published_at)}

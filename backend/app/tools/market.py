@@ -28,6 +28,7 @@ CROSS_ASSETS = {
     "INR=X": "USD/INR",
 }
 CROSS_ASSET_TTL_SECONDS = 3600
+INDIA_VIX = "^INDIAVIX"  # fetched with the cross assets; an input to the impact model, not a forecast target
 
 MACRO_SERIES = {
     "BZ=F": "Brent crude (USD/bbl)",
@@ -75,6 +76,7 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
     With nothing usable, the sample portfolio stands in and the source says so.
     """
     from app.portfolio.extractor import resolve_symbol
+    from app.tools import sectors
 
     holdings = []
     for row in raw or []:
@@ -110,7 +112,7 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
                 "name": raw_name or raw_sym or ticker,
                 "units": float(units),
                 "buy_price": float(buy_price) if buy_price is not None else None,
-                "sector": SECTORS.get(ticker.split(".")[0], "Other"),
+                "sector": sectors.known(ticker) or sectors.UNKNOWN,
             }
         )
     if holdings:
@@ -181,7 +183,7 @@ def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
 
 
 def get_cross_assets() -> pd.DataFrame | None:
-    """Daily closes since 2013 for crude, gas, gold and the rupee. Gaps are left
+    """Daily closes since 2013 for crude, gas, gold, the rupee and India VIX. Gaps are left
     as they are, so each column can be read on its own trading calendar.
     None when neither the live source nor a saved copy is available."""
     hit = _memory.get("cross_assets")
@@ -189,7 +191,7 @@ def get_cross_assets() -> pd.DataFrame | None:
         return hit[1]
     cache_file = CACHE_DIR / "cross_assets.csv"
     try:
-        closes = _download(list(CROSS_ASSETS), start=HISTORY_START).sort_index()
+        closes = _download([*CROSS_ASSETS, INDIA_VIX], start=HISTORY_START).sort_index()
         if closes.empty:
             raise ValueError("no cross-asset history")
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
