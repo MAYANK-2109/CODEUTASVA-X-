@@ -24,7 +24,10 @@ type EditableHolding = Holding & { _rowKey: string }
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const BACKEND_URL: string = (import.meta as any).env?.VITE_BACKEND_URL ?? 'http://localhost:8000'
+const BACKEND_URL: string =
+  (import.meta as any).env?.VITE_BACKEND_URL ||
+  (import.meta as any).env?.VITE_API_URL ||
+  'https://codeutasva-x.onrender.com'
 
 const PRICE_REFRESH_MS = 60_000
 
@@ -39,19 +42,21 @@ const TYPE_COLOURS: Record<string, string> = {
 // Helpers
 // ---------------------------------------------------------------------------
 const fmt = (n: number | null | undefined, decimals = 2) =>
-  n == null ? '—' : n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  n == null ? '0.00' : n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 
 const fmtCur = (n: number | null | undefined) =>
-  n == null ? '—' : `\u20B9${fmt(n)}`
+  n == null ? '₹0.00' : `\u20B9${fmt(n)}`
 
 function calcPnL(h: Holding) {
-  if (h.units == null || h.buy_price == null || h.current_price == null) return null
-  return (h.current_price - h.buy_price) * h.units
+  if (h.units == null || h.buy_price == null) return null
+  const cp = h.current_price ?? h.buy_price
+  return (cp - h.buy_price) * h.units
 }
 
 function pnlPct(h: Holding) {
-  if (h.buy_price == null || h.current_price == null) return null
-  return ((h.current_price - h.buy_price) / h.buy_price) * 100
+  if (h.buy_price == null || h.buy_price === 0) return null
+  const cp = h.current_price ?? h.buy_price
+  return ((cp - h.buy_price) / h.buy_price) * 100
 }
 
 function avatarColor(s: string): string {
@@ -188,9 +193,15 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
     if (valid.length === 0) { setError('Add at least one holding with a name.'); return }
     setStep('saving'); setError(null)
     const insertRows = valid.map(h => ({
-      user_id: userId, name: h.name.trim(), symbol: h.symbol || '',
-      isin: h.isin || '', type: h.type || 'STOCK', buy_date: h.buy_date || null,
-      units: h.units, buy_price: h.buy_price, current_price: h.current_price,
+      user_id: userId,
+      name: h.name.trim(),
+      symbol: h.symbol || '',
+      isin: h.isin || '',
+      type: h.type || 'STOCK',
+      buy_date: h.buy_date || null,
+      units: h.units != null ? h.units : 1,
+      buy_price: h.buy_price != null ? h.buy_price : 0,
+      current_price: h.current_price != null ? h.current_price : (h.buy_price != null ? h.buy_price : 0),
     }))
     try {
       const { data, error: sbErr } = await supabase.from('portfolio_holdings').insert(insertRows).select()

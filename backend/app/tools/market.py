@@ -58,28 +58,45 @@ def to_ticker(symbol: str) -> str:
 def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
     """Holdings as {ticker, name, units, buy_price, sector} and where they came from.
 
-    Rows without a tradable symbol or a quantity cannot be priced, so they are
-    dropped. With nothing usable, the sample portfolio stands in and the source
-    says so.
+    Rows without a tradable symbol or a quantity are auto-resolved where possible.
+    With nothing usable, the sample portfolio stands in and the source says so.
     """
+    from app.portfolio.extractor import resolve_symbol
+
     holdings = []
     for row in raw or []:
-        symbol = (row.get("symbol") or "").strip()
-        units = row.get("units")
-        if not units or units <= 0:
+        raw_sym = (row.get("symbol") or "").strip()
+        raw_name = (row.get("name") or "").strip()
+        raw_isin = (row.get("isin") or "").strip()
+
+        # Units alias (supports 'units' or 'shares')
+        units = row.get("units") if row.get("units") is not None else row.get("shares")
+        if units is None or float(units) <= 0:
             continue
-        if (row.get("type") or "STOCK").upper() not in ("STOCK", "ETF"):
+
+        row_type = (row.get("type") or "STOCK").upper()
+        if row_type not in ("STOCK", "ETF", "EQUITY"):
             continue
-        options = resolver.candidates(symbol, row.get("isin") or "", row.get("name") or "")
+
+        # Buy price alias (supports 'buy_price' or 'avg_price' or 'cost_price')
+        buy_price = row.get("buy_price") if row.get("buy_price") is not None else row.get("avg_price")
+
+        if not raw_sym or raw_sym.upper().startswith("IN"):
+            resolved = resolve_symbol(raw_name, raw_sym)
+            if resolved:
+                raw_sym = resolved
+
+        options = resolver.candidates(raw_sym, raw_isin, raw_name)
         if not options:
             continue
         ticker = options[0]
+
         holdings.append(
             {
                 "ticker": ticker,
-                "name": row.get("name") or symbol or ticker,
+                "name": raw_name or raw_sym or ticker,
                 "units": float(units),
-                "buy_price": row.get("buy_price"),
+                "buy_price": float(buy_price) if buy_price is not None else None,
                 "sector": SECTORS.get(ticker.split(".")[0], "Other"),
             }
         )

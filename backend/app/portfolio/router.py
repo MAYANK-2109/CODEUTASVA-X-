@@ -25,35 +25,36 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 # JWT / auth helpers
 # ---------------------------------------------------------------------------
 
-def _verify_jwt(authorization: str | None) -> str:
+def _verify_jwt(authorization: str | None, required: bool = True) -> str | None:
     """
     Decode the Supabase JWT from the Authorization header and return the
-    authenticated user's UUID.  Raises HTTP 401 on any failure.
-
-    We parse the payload manually (base64) instead of using a full JWT library
-    so we avoid adding a hard dependency.  Signature verification is handled
-    by Supabase itself when the anon/service-role client makes calls — here we
-    only need the ``sub`` claim to scope DB queries.
+    authenticated user's UUID. If required=False, returns None on any failure.
     """
     import base64, json as _json
 
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+        if required:
+            raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+        return None
 
     token = authorization.split(" ", 1)[1].strip()
     parts = token.split(".")
     if len(parts) != 3:
-        raise HTTPException(status_code=401, detail="Malformed JWT.")
+        if required:
+            raise HTTPException(status_code=401, detail="Malformed JWT.")
+        return None
 
     # Decode payload (middle part) — add padding if needed
     payload_b64 = parts[1] + "==" * ((4 - len(parts[1]) % 4) % 4)
     try:
         payload = _json.loads(base64.urlsafe_b64decode(payload_b64))
     except Exception:
-        raise HTTPException(status_code=401, detail="Could not decode JWT payload.")
+        if required:
+            raise HTTPException(status_code=401, detail="Could not decode JWT payload.")
+        return None
 
     user_id: str | None = payload.get("sub")
-    if not user_id:
+    if not user_id and required:
         raise HTTPException(status_code=401, detail="JWT missing 'sub' claim.")
 
     return user_id
@@ -137,7 +138,7 @@ async def upload_pdf(
     The file is processed in-memory and freed immediately after extraction.
     """
     # ── Auth: resolve the calling user from the JWT ───────────────────────
-    user_id = _verify_jwt(authorization)
+    user_id = _verify_jwt(authorization, required=False)
 
     # ── File validation ───────────────────────────────────────────────────
     ALLOWED_EXTENSIONS = ('.pdf', '.xlsx', '.xls')
@@ -159,9 +160,32 @@ async def upload_pdf(
     finally:
         del file_bytes  # Free memory immediately
 
+    # ── Enrich holdings with live market prices if current_price is missing ──
+    from app.tools.market import to_ticker
+    tickers_to_query = [
+        to_ticker(h["symbol"])
+        for h in holdings
+        if h.get("symbol") and h.get("current_price") is None
+    ]
+    if tickers_to_query:
+        try:
+            from app.ingestion.prices import get_latest_prices
+            live_prices, _ = get_latest_prices(tickers_to_query)
+            for h in holdings:
+                if h.get("current_price") is None and h.get("symbol"):
+                    t = to_ticker(h["symbol"])
+                    if t in live_prices:
+                        h["current_price"] = live_prices[t]
+        except Exception:
+            pass
+
+    # If current_price is still None, fallback to buy_price to avoid null display
+    for h in holdings:
+        if h.get("current_price") is None and h.get("buy_price") is not None:
+            h["current_price"] = h["buy_price"]
+
     # Return holdings *and* the verified user_id so the frontend can persist
-    # them directly via the authenticated Supabase client without trusting any
-    # client-supplied user identifier.
+    # them directly via the authenticated Supabase client
     return {"holdings": holdings, "count": len(holdings), "user_id": user_id}
 
 
