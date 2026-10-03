@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 interface NavItem {
   id: string
@@ -67,6 +68,7 @@ const navItems: NavItem[] = [
 
 const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth()
+  const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(false)
   const [activeItem, setActiveItem] = useState('dashboard')
 
@@ -85,15 +87,16 @@ const Sidebar: React.FC = () => {
     >
       {/* ── Top: User Profile ───────────────────────────────────── */}
       <div
-        className="flex items-center gap-3 p-4 border-b border-groww-border-light"
+        className="flex items-center gap-3 p-4 border-b border-groww-border-light cursor-pointer hover:bg-gray-50 transition-colors"
         style={{ minHeight: '72px' }}
+        onClick={() => navigate('/settings')}
       >
         {/* Avatar / profile icon */}
         <div
           id="sidebar-user-avatar"
-          className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm select-none cursor-pointer transition-transform duration-200 hover:scale-105"
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm select-none transition-transform duration-200 hover:scale-105"
           style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)' }}
-          title={userEmail}
+          title={userName}
         >
           {userInitial}
         </div>
@@ -106,7 +109,7 @@ const Sidebar: React.FC = () => {
           <p className="text-sm font-semibold text-groww-text-primary truncate capitalize">
             {userName}
           </p>
-          <p className="text-xs text-groww-text-muted truncate">{userEmail}</p>
+          <p className="text-xs text-groww-text-muted truncate">Settings</p>
         </div>
       </div>
 
