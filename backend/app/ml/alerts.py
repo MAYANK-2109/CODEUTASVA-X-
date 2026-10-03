@@ -14,11 +14,10 @@ from pathlib import Path
 
 import numpy as np
 
-from app.ingestion.news import get_news
+from app.ingestion.news import get_news, names_holding
 from app.ml.features import FEATURES, HORIZON, SHOCK_Z, abnormal_returns, risk_features
 from app.ml.radar import radar_alerts
 from app.risk import metrics
-from app.tools import resolver
 from app.tools import sentiment as sentiment_tool
 from app.tools.market import NIFTY, get_history, get_macro, normalise_holdings
 
@@ -170,16 +169,6 @@ def _concentration_alert(positions: list[dict], total: float) -> list[dict]:
 # --------------------------------------------------------------------------- news, weather, market
 
 
-def _name_keys(holding: dict) -> list[str]:
-    """Lower-case phrases that identify the company in a headline."""
-    words = resolver.clean_name(holding["name"]).lower().split()
-    keys = [" ".join(words[:2])] if len(words) >= 2 else words
-    symbol = holding["ticker"].split(".")[0].lower()
-    if len(symbol) >= 4:
-        keys.append(symbol)
-    return [k for k in keys if len(k) >= 4]
-
-
 def _news_alerts(positions: list[dict]) -> list[dict]:
     names = [p["name"] for p in positions[:8]]
     if not names:
@@ -193,8 +182,7 @@ def _news_alerts(positions: list[dict]) -> list[dict]:
     for item, score in sorted(zip(items, scores), key=lambda pair: pair[1]):
         if score > negative_cutoff or len(alerts) >= MAX_NEWS_ALERTS:
             break
-        title = item["title"].lower()
-        holding = next((p for p in positions if any(key in title for key in _name_keys(p))), None)
+        holding = next((p for p in positions if names_holding(item["title"], p["name"], p["ticker"])), None)
         if holding is None:
             continue  # the search matched loosely; the headline is not about a holding
         alerts.append(_alert(

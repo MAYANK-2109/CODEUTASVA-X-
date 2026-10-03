@@ -14,7 +14,8 @@ interface NewsItem {
   source: string | null
   url: string | null
   published_at: string | null
-  category?: string
+  // The holdings this headline names.
+  holdings: string[]
 }
 
 interface PortfolioStats {
@@ -220,6 +221,8 @@ const DashboardPage: React.FC = () => {
   const [news, setNews] = useState<NewsItem[]>([])
   const [newsLoading, setNewsLoading] = useState(true)
   const [newsFilter, setNewsFilter] = useState('ALL')
+  const [newsFailed, setNewsFailed] = useState(false)
+  const [newsScope, setNewsScope] = useState<{ source: 'user' | 'sample'; windowDays: number } | null>(null)
   const [newsSearch, setNewsSearch] = useState('')
   // Bumped by the refresh button so the risk overview reloads with everything else.
   const [refreshKey, setRefreshKey] = useState(0)
@@ -366,32 +369,41 @@ const DashboardPage: React.FC = () => {
     }
   }, [user?.id, backendUrl])
 
-  // ── Fetch News Trail Data ───────────────────────────────────────────────────
+  // ── Fetch News Trail Data: only headlines that name a stock the user holds ──
   const fetchNewsData = useCallback(async () => {
+    if (!user?.id) return
     setNewsLoading(true)
     try {
-      const res = await fetch(`${backendUrl}/api/news?limit=10`, {
+      const { data: saved, error } = await supabase
+        .from('portfolio_holdings')
+        .select('name, symbol, isin, units, buy_price, type')
+        .eq('user_id', user.id)
+      const holdings = error ? null : (saved ?? []).filter((h) => !isLeftover(h))
+      const res = await fetch(`${backendUrl}/api/news`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ holdings, limit: 30 }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        if (Array.isArray(data.items) && data.items.length > 0) {
-          const mapped: NewsItem[] = data.items.map((item: any) => ({
-            title: item.title,
-            source: item.source || 'Market Feed',
-            url: item.url,
-            published_at: item.published_at,
-            category: determineCategory(item.title),
-          }))
-          setNews(mapped)
-        }
-      }
+      if (!res.ok) throw new Error(`Request failed (${res.status})`)
+      const data = await res.json()
+      setNews(
+        (Array.isArray(data.items) ? data.items : []).map((item: NewsItem) => ({
+          title: item.title,
+          source: item.source,
+          url: item.url,
+          published_at: item.published_at,
+          holdings: item.holdings ?? [],
+        }))
+      )
+      setNewsScope({ source: data.portfolio_source, windowDays: data.window_days })
+      setNewsFailed(false)
     } catch {
       // The list keeps whatever was last fetched; with nothing fetched it says so.
+      setNewsFailed(true)
     } finally {
       setNewsLoading(false)
     }
-  }, [backendUrl])
+  }, [user?.id, backendUrl])
 
   // ── Fetch index levels and market trend ─────────────────────────────────────
   const fetchMarketData = useCallback(async () => {
@@ -411,33 +423,29 @@ const DashboardPage: React.FC = () => {
   // A dash stands in for any portfolio figure that has not loaded.
   const shown = (text: string) => (portfolioStats.available ? text : '—')
 
-  function determineCategory(text: string): string {
-    const lower = text.toLowerCase()
-    if (lower.includes('tax') || lower.includes('gst') || lower.includes('policy') || lower.includes('rbi')) return 'Policy & Tax'
-    if (lower.includes('energy') || lower.includes('power') || lower.includes('ntpc')) return 'Energy'
-    if (lower.includes('retail') || lower.includes('reliance') || lower.includes('tata')) return 'Corporate'
-    if (lower.includes('tech') || lower.includes('ai') || lower.includes('software')) return 'Tech'
-    return 'Markets'
-  }
-
   useEffect(() => {
     fetchPortfolioData()
     fetchNewsData()
     fetchMarketData()
   }, [fetchPortfolioData, fetchNewsData])
 
-  // News Filtering
+  // One filter per holding that has a headline, most headlines first.
+  const newsHoldings = useMemo(() => {
+    const counts = new Map<string, number>()
+    news.forEach((item) => item.holdings.forEach((name) => counts.set(name, (counts.get(name) ?? 0) + 1)))
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])
+  }, [news])
+  // A holding that drops out of the news after a refresh falls back to all headlines.
+  const activeNewsFilter = newsHoldings.some(([name]) => name === newsFilter) ? newsFilter : 'ALL'
+
   const filteredNews = useMemo(() => {
-    return news.filter((item) => {
-      const matchesSearch =
-        item.title.toLowerCase().includes(newsSearch.toLowerCase()) ||
-        (item.source && item.source.toLowerCase().includes(newsSearch.toLowerCase()))
-      const matchesCat =
-        newsFilter === 'ALL' ||
-        (item.category && item.category.toLowerCase().includes(newsFilter.toLowerCase()))
-      return matchesSearch && matchesCat
-    })
-  }, [news, newsSearch, newsFilter])
+    const search = newsSearch.toLowerCase()
+    return news.filter(
+      (item) =>
+        (item.title.toLowerCase().includes(search) || (item.source ?? '').toLowerCase().includes(search)) &&
+        (activeNewsFilter === 'ALL' || item.holdings.includes(activeNewsFilter))
+    )
+  }, [news, newsSearch, activeNewsFilter])
 
   return (
     <div id="dashboard-layout" className="flex flex-col-reverse md:flex-row h-dvh overflow-hidden bg-groww-bg-primary font-inter">
@@ -643,7 +651,7 @@ const DashboardPage: React.FC = () => {
                 </div>
               </section>
 
-              {/* ── 2. NEWS TRAIL CARD (Common to every user) ─────────────── */}
+              {/* ── 2. NEWS TRAIL CARD (headlines that name the user's holdings) ── */}
               <section
                 id="news-trail-card"
                 className="bg-white rounded-2xl sm:rounded-3xl border border-groww-border-light shadow-card p-6 flex flex-col transition-all duration-200"
@@ -653,12 +661,14 @@ const DashboardPage: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold text-groww-text-primary tracking-tight">Market News Trail</h3>
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700">
-                        Common Feed
+                      <span id="news-scope" className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700">
+                        {newsScope?.source === 'sample' ? 'Sample portfolio' : 'Your holdings'}
                       </span>
                     </div>
                     <p className="text-xs text-groww-text-muted mt-0.5">
-                      Curated financial updates, policy shifts & market announcements
+                      {newsScope?.source === 'sample'
+                        ? 'No stock holdings saved yet, so these headlines name the sample portfolio\'s stocks'
+                        : 'Only headlines that name a stock you hold'}
                     </p>
                   </div>
 
@@ -690,18 +700,19 @@ const DashboardPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* News Category Pills */}
-                <div className="flex items-center gap-2 py-3 overflow-x-auto no-scrollbar">
-                  {['ALL', 'Markets', 'Policy & Tax', 'Corporate', 'Energy', 'Tech'].map((category) => (
+                {/* One pill per holding that has a headline */}
+                <div id="news-holding-filters" className="flex items-center gap-2 py-3 overflow-x-auto no-scrollbar">
+                  {[['ALL', news.length] as [string, number], ...newsHoldings].map(([name, count]) => (
                     <button
-                      key={category}
-                      onClick={() => setNewsFilter(category)}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 ${newsFilter === category
+                      key={name}
+                      onClick={() => setNewsFilter(name)}
+                      aria-pressed={activeNewsFilter === name}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 ${activeNewsFilter === name
                           ? 'bg-groww-green text-white shadow-sm'
                           : 'bg-gray-100 text-groww-text-secondary hover:bg-gray-200'
                         }`}
                     >
-                      {category}
+                      {name === 'ALL' ? 'All' : name} <span className="font-normal opacity-80">{count}</span>
                     </button>
                   ))}
                 </div>
@@ -711,17 +722,23 @@ const DashboardPage: React.FC = () => {
                   {newsLoading && news.length === 0 ? (
                     <div className="py-12 flex flex-col items-center justify-center gap-3">
                       <div className="w-8 h-8 border-3 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
-                      <p className="text-xs text-groww-text-muted">Streaming news trail...</p>
+                      <p className="text-xs text-groww-text-muted">Searching for headlines on your holdings…</p>
                     </div>
                   ) : filteredNews.length === 0 ? (
                     <div className="py-12 text-center">
                       <p className="text-sm font-semibold text-groww-text-secondary">
-                        {news.length === 0 ? 'News is unavailable right now' : 'No articles found'}
+                        {news.length > 0
+                          ? 'No articles found'
+                          : newsFailed
+                            ? 'News is unavailable right now'
+                            : 'No headlines name your holdings'}
                       </p>
                       <p className="text-xs text-groww-text-muted mt-1">
-                        {news.length === 0
-                          ? 'The news feed could not be reached. Use refresh to try again.'
-                          : 'Try searching for a different keyword or category.'}
+                        {news.length > 0
+                          ? 'Try a different keyword or holding.'
+                          : newsFailed
+                            ? 'The news feed could not be reached. Use refresh to try again.'
+                            : `Nothing published in the last ${newsScope?.windowDays ?? 7} days names a stock you hold.`}
                       </p>
                     </div>
                   ) : (
@@ -741,13 +758,11 @@ const DashboardPage: React.FC = () => {
                           {/* Metadata row */}
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-groww-green-dark border border-emerald-100">
-                              {item.source || 'Market Feed'}
+                              {item.source || 'News'}
                             </span>
-                            {item.category && (
-                              <span className="text-[11px] text-groww-text-muted">
-                                &bull; {item.category}
-                              </span>
-                            )}
+                            <span className="text-[11px] font-semibold text-groww-text-secondary">
+                              {item.holdings.join(', ')}
+                            </span>
                             <span className="text-[11px] text-groww-text-muted flex items-center gap-1 ml-auto">
                               <IconClock />
                               {timeAgo(item.published_at)}
@@ -780,8 +795,11 @@ const DashboardPage: React.FC = () => {
 
                 {/* Footer Note */}
                 <div className="mt-4 pt-3 border-t border-groww-border-light flex items-center justify-between text-xs text-groww-text-muted">
-                  <span>Synced with National Market Disclosures</span>
-                  <span className="font-semibold text-groww-green">Updates every 5 mins</span>
+                  <span>Source: Google News</span>
+                  <span>
+                    {news.length} headline{news.length === 1 ? '' : 's'} from the last {newsScope?.windowDays ?? 7} days
+                    {newsFailed && news.length > 0 ? ' · last refresh failed' : ''}
+                  </span>
                 </div>
               </section>
 

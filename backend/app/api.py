@@ -4,10 +4,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.ingestion.news import get_news
+from app.ingestion.news import HOLDINGS_WINDOW_DAYS, get_holdings_news
 from app.ingestion.prices import get_latest_prices
 from app.tools import resolver, vector_store
-from app.tools.market import get_indices, market_trend
+from app.tools.market import get_indices, market_trend, normalise_holdings
 
 PORTFOLIO_FILE = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
 
@@ -57,13 +57,29 @@ def portfolio() -> dict:
     }
 
 
-@router.get("/news")
-def news(limit: int = 8) -> dict:
-    names = [h["name"] for h in load_portfolio()["holdings"]]
-    query = " OR ".join(f'"{name}"' for name in names) + " when:2d"
-    items = get_news(query, limit)
+class NewsRequest(BaseModel):
+    holdings: list[dict] | None = None
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+def _holdings_news(raw_holdings: list[dict] | None, limit: int) -> dict:
+    holdings, source = normalise_holdings(raw_holdings)
+    items = get_holdings_news(holdings, limit)
     vector_store.index_news(items)  # embedded and indexed in the background
-    return {"items": items}
+    return {"items": items, "portfolio_source": source, "holdings": len(holdings),
+            "window_days": HOLDINGS_WINDOW_DAYS}
+
+
+@router.post("/news")
+def news_for_holdings(request: NewsRequest) -> dict:
+    """Recent headlines that name one of the user's stock holdings, and nothing else."""
+    return _holdings_news(request.holdings, request.limit)
+
+
+@router.get("/news")
+def news(limit: int = 20) -> dict:
+    """The same for the sample portfolio, for a caller with no holdings to send."""
+    return _holdings_news(None, limit)
 
 
 class HoldingRef(BaseModel):
