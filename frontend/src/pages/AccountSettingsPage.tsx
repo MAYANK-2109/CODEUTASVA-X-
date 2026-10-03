@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
-
 const AccountSettingsPage: React.FC = () => {
-  const [_activeTab, _setActiveTab] = useState('user');
   const [isEditing, setIsEditing] = useState(false);
 
   const { user, signOut } = useAuth();
