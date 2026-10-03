@@ -378,3 +378,40 @@ def test_finbert_scores_financial_headlines(monkeypatch):
     assert good > 0.5 and bad < -0.5 and abs(flat) < 0.3
     # No negative word a lexicon would catch, but clearly bad news for the company.
     assert missed_by_lexicon < -0.5
+
+
+def test_insights_portfolio_indexes_prices_and_marks_events(offline, monkeypatch):
+    from app import insights
+
+    closes = synthetic_closes(event_drop=-0.12, market_drop=-0.03)
+    monkeypatch.setattr(insights, "get_history", lambda tickers: (closes, "live"))
+    response = TestClient(app).post("/api/insights/portfolio", json={"holdings": HOLDING, "range": "3y"})
+    assert response.status_code == 200
+    body = response.json()
+
+    series = body["prices"]["series"][0]
+    assert series["ticker"] == "AAA.NS" and series["values"][0] == 100
+    assert len(series["values"]) == len(body["prices"]["dates"]) == len(body["prices"]["benchmark"]["values"])
+    assert body["stats"]["total"] == body["positions"][0]["value"]
+    assert body["sectors"][0]["weight"] == 1
+
+    first, last = body["prices"]["dates"][0], body["prices"]["dates"][-1]
+    assert body["events"] and all(first <= e["date"] <= last for e in body["events"])
+    cyclone = next(e for e in body["events"] if e["type"] == "cyclone")
+    assert cyclone["moves"]["AAA.NS"] < -0.05
+    assert body["prices"]["dates"][cyclone["index"]] >= cyclone["date"]
+
+
+def test_insights_weather_includes_daily_values_and_thresholds(monkeypatch):
+    from app import insights
+
+    monkeypatch.setattr(insights, "get_weather_outlook", lambda: [
+        {"name": "Jamnagar", "relevance": "refining hub", "sectors": ["Energy"], "flags": ["heavy rain"],
+         "max_rain_mm": 140.0, "max_gust_kmh": 40.0, "max_temp_c": 31.0,
+         "days": [{"date": "2026-10-04", "rain_mm": 140.0, "gust_kmh": 40.0, "temp_c": 31.0}]}])
+    body = TestClient(app).get("/api/insights/weather").json()
+    assert body["sites"][0]["days"][0]["rain_mm"] == 140.0
+    assert body["thresholds"] == {"rain_mm": 64.5, "gust_kmh": 62, "temp_c": 40}
+
+    monkeypatch.setattr(insights, "get_weather_outlook", lambda: None)
+    assert TestClient(app).get("/api/insights/weather").status_code == 503

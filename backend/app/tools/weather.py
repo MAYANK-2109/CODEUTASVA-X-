@@ -7,12 +7,18 @@ CACHE_TTL_SECONDS = 1800
 
 # Sites chosen for their economic footprint, not population.
 LOCATIONS = [
-    {"name": "Mumbai", "lat": 19.08, "lon": 72.88, "relevance": "financial hub, Mumbai High offshore oil, JNPT port"},
-    {"name": "Jamnagar", "lat": 22.47, "lon": 70.06, "relevance": "refining hub, Gujarat ports"},
-    {"name": "Chennai", "lat": 13.08, "lon": 80.27, "relevance": "auto and electronics manufacturing, IT"},
-    {"name": "Visakhapatnam", "lat": 17.69, "lon": 83.22, "relevance": "refinery, steel plant, east-coast port"},
-    {"name": "Kolkata", "lat": 22.57, "lon": 88.36, "relevance": "east-coast port and trade hub"},
-    {"name": "Delhi NCR", "lat": 28.61, "lon": 77.21, "relevance": "power demand centre, auto manufacturing"},
+    {"name": "Mumbai", "lat": 19.08, "lon": 72.88, "relevance": "financial hub, Mumbai High offshore oil, JNPT port",
+     "sectors": ["Energy", "Banking", "Financials", "Infrastructure"]},
+    {"name": "Jamnagar", "lat": 22.47, "lon": 70.06, "relevance": "refining hub, Gujarat ports",
+     "sectors": ["Energy", "Infrastructure"]},
+    {"name": "Chennai", "lat": 13.08, "lon": 80.27, "relevance": "auto and electronics manufacturing, IT",
+     "sectors": ["Auto", "IT"]},
+    {"name": "Visakhapatnam", "lat": 17.69, "lon": 83.22, "relevance": "refinery, steel plant, east-coast port",
+     "sectors": ["Energy", "Metals", "Infrastructure"]},
+    {"name": "Kolkata", "lat": 22.57, "lon": 88.36, "relevance": "east-coast port and trade hub",
+     "sectors": ["Metals", "Infrastructure"]},
+    {"name": "Delhi NCR", "lat": 28.61, "lon": 77.21, "relevance": "power demand centre, auto manufacturing",
+     "sectors": ["Utilities", "Auto", "Airlines"]},
 ]
 
 # India Meteorological Department thresholds.
@@ -60,10 +66,19 @@ def get_weather_outlook() -> list[dict] | None:
             flags.append("gale-force gusts")
         if heat is not None and heat >= HEAT_C:
             flags.append("extreme heat")
+        days = [
+            {"date": date, "rain_mm": r, "gust_kmh": g, "temp_c": t}
+            for date, r, g, t in zip(
+                daily.get("time", []), daily.get("precipitation_sum", []),
+                daily.get("wind_gusts_10m_max", []), daily.get("temperature_2m_max", []),
+            )
+        ]
         outlook.append(
             {
                 "name": place["name"],
                 "relevance": place["relevance"],
+                "sectors": place["sectors"],
+                "days": days,
                 "max_rain_mm": rain,
                 "max_gust_kmh": gust,
                 "max_temp_c": heat,

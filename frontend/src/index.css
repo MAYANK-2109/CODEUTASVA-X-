@@ -39,6 +39,28 @@
   }
 }
 
+/* Chart tokens (light surface). Categorical order is fixed: a series keeps its slot. */
+.viz-root {
+  --viz-surface: #ffffff;
+  --viz-ink: #0b0b0b;
+  --viz-ink-2: #52514e;
+  --viz-muted: #898781;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-context: #a3a199;
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-series-3: #1baf7a;
+  --viz-series-4: #eda100;
+  --viz-series-5: #e87ba4;
+  --viz-series-6: #008300;
+  --viz-series-7: #4a3aa7;
+  --viz-series-8: #e34948;
+  --viz-good: #0ca30c;
+  --viz-good-text: #006300;
+  --viz-critical: #d03b3b;
+}
+
 @layer components {
   /* Auth input styles */
   .auth-input {

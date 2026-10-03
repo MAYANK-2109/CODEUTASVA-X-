@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import PortfolioPage from './pages/PortfolioPage'
+import InsightsPage from './pages/InsightsPage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
 
 function App() {
@@ -34,6 +35,19 @@ function App() {
                   <Sidebar />
                   <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
                     <PortfolioPage />
+                  </main>
+                </div>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/insights"
+            element={
+              <ProtectedRoute>
+                <div className="flex flex-col-reverse md:flex-row h-dvh overflow-hidden bg-groww-bg-primary">
+                  <Sidebar />
+                  <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+                    <InsightsPage />
                   </main>
                 </div>
               </ProtectedRoute>
