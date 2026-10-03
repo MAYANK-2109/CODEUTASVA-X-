@@ -72,9 +72,10 @@ const navItems: NavItem[] = [
 interface SidebarProps {
   activePage?: string
   onNavigate?: (page: string) => void
+  onAddPdf?: () => void
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate, onAddPdf }) => {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -168,6 +169,57 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage = 'dashboard', onNavigate 
           )
         )}
       </nav>
+
+      {/* ── Add Latest PDF ───────────────────────────────────────── */}
+      {onAddPdf && (
+        <div className="px-3 pb-2">
+          {collapsed ? (
+            <div className="relative group">
+              <button
+                id="sidebar-add-pdf-btn"
+                onClick={onAddPdf}
+                aria-label="Add Latest PDF"
+                className="nav-item-collapsed w-full"
+                style={{ color: '#00B386' }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="12" y1="18" x2="12" y2="12"/>
+                  <line x1="9" y1="15" x2="15" y2="15"/>
+                </svg>
+              </button>
+              <span
+                className="absolute left-14 top-1/2 -translate-y-1/2 z-50 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                style={{ background: '#1A1A2E' }}
+              >
+                Add Latest PDF
+                <span
+                  className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent"
+                  style={{ borderRightColor: '#1A1A2E' }}
+                />
+              </span>
+            </div>
+          ) : (
+            <button
+              id="sidebar-add-pdf-btn"
+              onClick={onAddPdf}
+              className="nav-item w-full text-left font-semibold"
+              style={{ color: '#00B386' }}
+            >
+              <span className="shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="12" y1="18" x2="12" y2="12"/>
+                  <line x1="9" y1="15" x2="15" y2="15"/>
+                </svg>
+              </span>
+              <span className="truncate">Add Latest PDF</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Bottom: Sign out ────────────────────────────────────── */}
       <div className="px-3 pb-4 border-t border-groww-border-light pt-4">

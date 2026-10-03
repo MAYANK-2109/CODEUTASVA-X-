@@ -114,10 +114,24 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
     const fname = file.name.toLowerCase()
     if (!ALLOWED_EXTS.some(ext => fname.endsWith(ext))) { setError('Please upload a PDF, XLSX, or XLS file.'); return }
     setError(null); setLoading(true)
+
+    // Attach the session JWT so the backend can verify which user is uploading
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
+    if (!token) {
+      setError('You must be signed in to upload a file.')
+      setLoading(false)
+      return
+    }
+
     const formData = new FormData()
     formData.append('file', file)
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/portfolio/upload-pdf`, { method: 'POST', body: formData })
+      const resp = await fetch(`${BACKEND_URL}/api/portfolio/upload-pdf`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      })
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ detail: 'Unknown error' }))
         throw new Error(err.detail || `HTTP ${resp.status}`)
@@ -462,7 +476,14 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
 // ---------------------------------------------------------------------------
 // Main Portfolio Page
 // ---------------------------------------------------------------------------
-const PortfolioPage: React.FC = () => {
+interface PortfolioPageProps {
+  /** When true, externally triggers the upload modal to open (e.g. from Sidebar). */
+  externalShowModal?: boolean
+  /** Called after the external trigger has been consumed so the parent resets its flag. */
+  onExternalModalClose?: () => void
+}
+
+const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExternalModalClose }) => {
   const { user } = useAuth()
   const [holdings, setHoldings] = useState<Holding[]>([])
   const [loading, setLoading] = useState(true)
@@ -488,6 +509,14 @@ const PortfolioPage: React.FC = () => {
   }, [user?.id])
 
   useEffect(() => { fetchHoldings() }, [fetchHoldings])
+
+  // Respond to external trigger (e.g. "Add Latest PDF" clicked in Sidebar)
+  useEffect(() => {
+    if (externalShowModal) {
+      setShowModal(true)
+      onExternalModalClose?.()  // reset parent flag so it doesn't re-fire
+    }
+  }, [externalShowModal, onExternalModalClose])
 
   const handleAdd = (newHoldings: Holding[]) => {
     setHoldings(prev => [...newHoldings, ...prev])
