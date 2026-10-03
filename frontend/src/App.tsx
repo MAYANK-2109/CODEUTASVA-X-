@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import PortfolioPage from './pages/PortfolioPage'
 import InsightsPage from './pages/InsightsPage'
+import TerminalPage from './pages/TerminalPage'
 import AccountSettingsPage from './pages/AccountSettingsPage'
 
 function App() {
@@ -23,6 +24,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/terminal"
+            element={
+              <ProtectedRoute>
+                <TerminalPage />
               </ProtectedRoute>
             }
           />
