@@ -26,6 +26,70 @@ export interface Solution {
   alternative: string | null
   // The rule that picked the action, with the numbers it compared.
   why: string
+  // The trades that carry the action out; empty when there is nothing to trade.
+  orders?: PaperOrder[]
+}
+
+export interface PaperOrder {
+  type: 'sell' | 'buy_put'
+  ticker: string
+  name: string
+  quantity?: number
+  price?: number
+  notional?: number
+  premium?: number
+  sessions?: number
+}
+
+export interface PaperFill extends PaperOrder {
+  fill_price: number
+  slippage_bps: number
+  slippage_amount: number
+  cash_flow: number
+  liquidity_known: boolean
+}
+
+// One execution in the paper account, with every state it passed through.
+export interface PaperExecution {
+  id: string
+  alert_id: string
+  title: string
+  action: SolutionAction
+  mode: 'manual' | 'auto'
+  state: 'FILLED' | 'REJECTED'
+  broker: string
+  created_at: string
+  detail: string | null
+  fills: PaperFill[]
+  events: { state: string; at: string; detail: string | null }[]
+  verification: {
+    horizon_sessions: number
+    var_before: number
+    var_after: number
+    reduction: number
+    method: string
+  } | null
+  duplicate?: boolean
+}
+
+export interface PaperPolicy {
+  enabled: boolean
+  min_downside: number
+  max_put_cost: number
+}
+
+export interface PaperAccount {
+  broker: string
+  policy: PaperPolicy
+  summary: {
+    filled: number
+    rejected: number
+    cash_from_sales: number
+    premium_paid: number
+    slippage_cost: number
+    var_reduction: number
+  }
+  executions: PaperExecution[]
 }
 
 // One step of an alert's evidence trail: what was found, and how.

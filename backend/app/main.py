@@ -33,6 +33,9 @@ app.include_router(insights_router)
 from app.terminal import router as terminal_router  # noqa: E402
 app.include_router(terminal_router)
 
+from app.broker.router import router as broker_router  # noqa: E402
+app.include_router(broker_router)
+
 from app.tools import vector_store  # noqa: E402
 vector_store.warm_up_in_background()
 
