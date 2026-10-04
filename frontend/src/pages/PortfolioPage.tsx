@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
 import { Skeleton } from '../components/Skeleton'
+import { IconWallet, IconChartBar, IconTrendingUp, IconTrendingDown, IconTriangleUp, IconTriangleDown } from '../components/Icons'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -770,23 +771,29 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
         {holdings.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             {[
-              { label: 'Total Invested', value: fmtCur(totalInvested), icon: '💰', color: '#6366F1' },
-              { label: 'Current Value',  value: fmtCur(totalCurrent),  icon: '📊', color: '#00B386' },
+              { label: 'Total Invested', value: fmtCur(totalInvested), Icon: IconWallet, color: '#6366F1', bg: 'bg-indigo-50 text-indigo-600' },
+              { label: 'Current Value',  value: fmtCur(totalCurrent),  Icon: IconChartBar, color: '#00B386', bg: 'bg-emerald-50 text-groww-green' },
               {
                 label: 'Total P&L',
                 value: `${totalPnL >= 0 ? '+' : ''}${fmtCur(totalPnL)} (${totalPnL >= 0 ? '+' : ''}${totalPnLPct.toFixed(2)}%)`,
-                icon: totalPnL >= 0 ? '📈' : '📉',
+                Icon: totalPnL >= 0 ? IconTrendingUp : IconTrendingDown,
                 color: totalPnL >= 0 ? '#16A34A' : '#DC2626',
+                bg: totalPnL >= 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600',
               },
-            ].map(card => (
-              <div key={card.label} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">{card.icon}</span>
-                  <span className="text-xs font-medium text-gray-500">{card.label}</span>
+            ].map(card => {
+              const CardIcon = card.Icon
+              return (
+                <div key={card.label} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${card.bg}`}>
+                      <CardIcon className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-semibold text-gray-500">{card.label}</span>
+                  </div>
+                  <p className="text-xl font-bold" style={{ color: card.color }}>{card.value}</p>
                 </div>
-                <p className="text-xl font-bold" style={{ color: card.color }}>{card.value}</p>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -963,7 +970,10 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                           {pnl != null ? (
                             <div className={`flex flex-col items-end ${isProfit ? 'text-green-600' : 'text-red-500'}`}>
                               <span className="text-sm font-semibold tabular-nums">{isProfit ? '+' : ''}{fmtCur(pnl)}</span>
-                              <span className="text-[10px] font-medium tabular-nums opacity-80">{isProfit ? '▲' : '▼'} {Math.abs(pnlP ?? 0).toFixed(2)}%</span>
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium tabular-nums opacity-80">
+                                {isProfit ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
+                                <span>{Math.abs(pnlP ?? 0).toFixed(2)}%</span>
+                              </span>
                             </div>
                           ) : <span className="text-xs text-gray-400">—</span>}
                         </td>

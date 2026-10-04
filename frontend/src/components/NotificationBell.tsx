@@ -7,6 +7,7 @@ import type {
   Alert, AlertsResult, HoldingRisk, PaperAccount, PaperExecution, PaperOrder, PaperPolicy, RiskModel, Severity,
   SolutionAction,
 } from '../lib/alerts'
+import { IconCritical, IconWarning, IconInfo, IconCheck, IconCross, IconTriangleUp } from './Icons'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -16,10 +17,10 @@ const BACKEND_URL: string =
 const REFRESH_MS = 180_000
 
 // Status is never shown by colour alone: each level has its own mark and label.
-const SEVERITY: Record<Severity, { mark: string; label: string; chip: string; border: string }> = {
-  critical: { mark: '▲', label: 'Critical', chip: 'bg-red-50 text-red-600', border: 'border-l-red-500' },
-  warning: { mark: '●', label: 'Warning', chip: 'bg-amber-50 text-amber-700', border: 'border-l-amber-500' },
-  info: { mark: 'i', label: 'Info', chip: 'bg-gray-100 text-groww-text-secondary', border: 'border-l-gray-300' },
+const SEVERITY: Record<Severity, { Icon: React.FC<{ className?: string }>; label: string; chip: string; border: string }> = {
+  critical: { Icon: IconCritical, label: 'Critical', chip: 'bg-red-50 text-red-600', border: 'border-l-red-500' },
+  warning: { Icon: IconWarning, label: 'Warning', chip: 'bg-amber-50 text-amber-700', border: 'border-l-amber-500' },
+  info: { Icon: IconInfo, label: 'Info', chip: 'bg-gray-100 text-groww-text-secondary', border: 'border-l-gray-300' },
 }
 const NEEDS_ATTENTION: Severity[] = ['critical', 'warning']
 
@@ -71,9 +72,10 @@ const ExecutionResult: React.FC<{ execution: PaperExecution; showStates?: boolea
         filled ? 'bg-groww-green-pale border-groww-green/30' : 'bg-red-50 border-red-100'
       }`}
     >
-      <p className={`font-bold ${filled ? 'text-groww-green-dark' : 'text-red-600'}`}>
-        {filled ? '✓ Filled in the paper account' : '✕ Rejected'} · {execution.mode === 'auto' ? 'by your policy' : 'one click'} ·{' '}
-        {time(execution.created_at)}
+      <p className={`font-bold flex items-center gap-1.5 ${filled ? 'text-groww-green-dark' : 'text-red-600'}`}>
+        {filled ? <IconCheck className="w-3.5 h-3.5 shrink-0" /> : <IconCross className="w-3.5 h-3.5 shrink-0" />}
+        <span>{filled ? 'Filled in the paper account' : 'Rejected'}</span>
+        <span className="font-normal text-groww-text-muted">· {execution.mode === 'auto' ? 'by your policy' : 'one click'} · {time(execution.created_at)}</span>
       </p>
       {execution.fills.map((fill, index) => (
         <p key={index} className="text-groww-text-primary tabular-nums">
@@ -219,9 +221,9 @@ const AlertItem: React.FC<{
   }
   return (
     <li className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
-      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
-        <span aria-hidden>{style.mark}</span>
-        {style.label}
+      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
+        <style.Icon className="w-2.5 h-2.5 shrink-0" />
+        <span>{style.label}</span>
       </span>
       <p className="mt-1.5 text-sm font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
       <p className="mt-1 text-xs text-groww-text-secondary leading-relaxed">{alert.detail}</p>
@@ -384,7 +386,12 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
                   </span>
                   <span className="w-8 text-right font-semibold text-groww-text-primary">{percent(row.fall)}</span>
                 </span>
-                {row.elevated && <span className="block text-[11px] font-semibold text-red-600">▲ Elevated</span>}
+                {row.elevated && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                    <IconTriangleUp className="w-2.5 h-2.5 shrink-0" />
+                    <span>Elevated</span>
+                  </span>
+                )}
               </td>
               <td className="py-2 text-right whitespace-nowrap">
                 <span className="font-semibold text-groww-text-primary">{inr(row.downside_amount)}</span>

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { Skeleton } from '../components/Skeleton'
+import { IconTriangleDown } from '../components/Icons'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -562,7 +563,10 @@ const PriceChart: React.FC<{
           </ul>
           {eventsAt(hover).map((event) => (
             <p key={event.id} className="mt-2 pt-2 border-t border-groww-border-light text-groww-text-primary">
-              <span className="font-semibold">▼ {event.title}</span>
+              <span className="font-semibold inline-flex items-center gap-1">
+                <IconTriangleDown className="w-2.5 h-2.5 text-groww-green shrink-0" />
+                <span>{event.title}</span>
+              </span>
               <span className="block text-groww-text-secondary">{shortDate(event.date)}</span>
             </p>
           ))}
@@ -905,8 +909,9 @@ const InsightsPage: React.FC = () => {
                   lanes={lanes}
                 />
               </div>
-              <p className="mt-2 text-[11px] text-groww-text-muted">
-                ▼ marks a past event. Hover the chart to read indexed values.
+              <p className="mt-2 text-[11px] text-groww-text-muted flex items-center gap-1 flex-wrap">
+                <IconTriangleDown className="w-2.5 h-2.5 text-groww-green shrink-0" />
+                <span>marks a past event. Hover the chart to read indexed values.</span>
                 {data.prices.truncated && ' Only the eight largest holdings can be plotted.'}
               </p>
             </Card>

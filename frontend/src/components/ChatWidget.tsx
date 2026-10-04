@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import EvidenceTrail from './EvidenceTrail'
 import type { TrailDecision, TrailStep } from './EvidenceTrail'
+import { IconCheck, IconWarning } from './Icons'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -324,8 +325,12 @@ const PipelineView: React.FC<{ steps: Record<string, Step>; finished: boolean }>
               >
                 <div className="flex items-center gap-1.5">
                   {step ? (
-                    <span className={step.status === 'degraded' ? 'text-amber-600' : 'text-groww-green'}>
-                      {step.status === 'degraded' ? '!' : '✓'}
+                    <span className={`inline-flex items-center ${step.status === 'degraded' ? 'text-amber-600' : 'text-groww-green'}`}>
+                      {step.status === 'degraded' ? (
+                        <IconWarning className="w-2.5 h-2.5 shrink-0" />
+                      ) : (
+                        <IconCheck className="w-2.5 h-2.5 shrink-0" />
+                      )}
                     </span>
                   ) : running ? (
                     <span className="w-2.5 h-2.5 rounded-full border-2 border-groww-green border-t-transparent animate-spin" />

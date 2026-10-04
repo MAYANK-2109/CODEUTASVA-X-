@@ -60,18 +60,20 @@ const OVERVIEW_REFRESH_MS = 180_000
 const STREAMS_REFRESH_MS = 60_000
 const MAX_ALERTS = 4
 
+import { IconCritical, IconWarning, IconInfo, IconLive, IconDegraded, IconDown, IconIdle } from './Icons'
+
 // Status is never shown by colour alone: each state has its own mark and word.
-const STATUS: Record<StreamStatus, { mark: string; label: string; className: string }> = {
-  live: { mark: '●', label: 'Live', className: 'text-groww-green' },
-  degraded: { mark: '◐', label: 'Fallback', className: 'text-amber-600' },
-  down: { mark: '▲', label: 'Down', className: 'text-red-600' },
-  idle: { mark: '○', label: 'Idle', className: 'text-groww-text-muted' },
+const STATUS: Record<StreamStatus, { Icon: React.FC<{ className?: string }>; label: string; className: string }> = {
+  live: { Icon: IconLive, label: 'Live', className: 'text-groww-green' },
+  degraded: { Icon: IconDegraded, label: 'Fallback', className: 'text-amber-600' },
+  down: { Icon: IconDown, label: 'Down', className: 'text-red-600' },
+  idle: { Icon: IconIdle, label: 'Idle', className: 'text-groww-text-muted' },
 }
 
-const SEVERITY: Record<Severity, { mark: string; label: string; chip: string }> = {
-  critical: { mark: '▲', label: 'Critical', chip: 'bg-red-50 text-red-600' },
-  warning: { mark: '●', label: 'Warning', chip: 'bg-amber-50 text-amber-700' },
-  info: { mark: 'i', label: 'Info', chip: 'bg-gray-100 text-groww-text-secondary' },
+const SEVERITY: Record<Severity, { Icon: React.FC<{ className?: string }>; label: string; chip: string }> = {
+  critical: { Icon: IconCritical, label: 'Critical', chip: 'bg-red-50 text-red-600 border border-red-200/50' },
+  warning: { Icon: IconWarning, label: 'Warning', chip: 'bg-amber-50 text-amber-700 border border-amber-200/50' },
+  info: { Icon: IconInfo, label: 'Info', chip: 'bg-gray-100 text-groww-text-secondary border border-gray-200/50' },
 }
 
 const inr = (value: number) =>
@@ -283,23 +285,26 @@ export const RiskAlertList: React.FC<{ className?: string }> = ({ className = ''
         </p>
       ) : (
         <ul className="mt-3.5 flex flex-col divide-y divide-groww-border-light">
-          {live.slice(0, MAX_ALERTS).map((alert) => (
-            <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
-              <span
-                className={`mt-0.5 shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${SEVERITY[alert.severity].chip}`}
-              >
-                <span aria-hidden>{SEVERITY[alert.severity].mark}</span>
-                {SEVERITY[alert.severity].label}
-              </span>
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
-                <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">
-                  <span className="font-semibold text-groww-text-primary">Action: </span>
-                  {alert.solution?.headline ?? alert.recommendation}
-                </p>
-              </div>
-            </li>
-          ))}
+          {live.slice(0, MAX_ALERTS).map((alert) => {
+            const SeverityIcon = SEVERITY[alert.severity].Icon
+            return (
+              <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
+                <span
+                  className={`mt-0.5 shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${SEVERITY[alert.severity].chip}`}
+                >
+                  <SeverityIcon className="w-2.5 h-2.5 shrink-0" />
+                  <span>{SEVERITY[alert.severity].label}</span>
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
+                  <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">
+                    <span className="font-semibold text-groww-text-primary">Action: </span>
+                    {alert.solution?.headline ?? alert.recommendation}
+                  </p>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
       {alerts.result && alerts.result.unavailable.length > 0 && (
@@ -358,11 +363,13 @@ export const RiskStreamsCard: React.FC<{ backendUrl: string; className?: string 
         <ul className="mt-3.5 flex flex-col gap-2.5">
           {feeds.streams.map((stream) => {
             const status = STATUS[stream.status]
+            const StatusIcon = status.Icon
             const when = ago(stream.checked_at)
             return (
               <li key={stream.key} className="flex items-start gap-2.5 text-xs">
-                <span className={`w-[74px] shrink-0 whitespace-nowrap font-semibold ${status.className}`}>
-                  <span aria-hidden>{status.mark}</span> {status.label}
+                <span className={`w-[80px] shrink-0 whitespace-nowrap font-semibold inline-flex items-center gap-1.5 ${status.className}`}>
+                  <StatusIcon className="w-2.5 h-2.5 shrink-0" />
+                  <span>{status.label}</span>
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="font-semibold text-groww-text-primary">{stream.label}</span>{' '}

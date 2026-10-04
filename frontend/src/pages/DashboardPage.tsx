@@ -7,6 +7,7 @@ import { isLeftover, savedPrice } from '../lib/holdings'
 import NotificationBell from '../components/NotificationBell'
 import { RiskOverviewTiles, RiskAlertList, RiskStreamsCard } from '../components/RiskTerminal'
 import { Skeleton } from '../components/Skeleton'
+import { IconTriangleUp, IconTriangleDown } from '../components/Icons'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -765,8 +766,9 @@ const DashboardPage: React.FC = () => {
                       <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">Nifty 50</p>
                       <p className="text-sm font-bold text-groww-text-primary mt-0.5">{nifty ? fmtNum(nifty.value) : '—'}</p>
                       {nifty ? (
-                        <span className={`text-xs font-semibold mt-0.5 block ${nifty.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
-                          {nifty.change_1d_pct >= 0 ? '▲' : '▼'} {fmtPct(nifty.change_1d_pct)} on the day
+                        <span className={`text-xs font-semibold mt-0.5 inline-flex items-center gap-1 ${nifty.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
+                          {nifty.change_1d_pct >= 0 ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
+                          <span>{fmtPct(nifty.change_1d_pct)} on the day</span>
                         </span>
                       ) : (
                         <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
@@ -777,8 +779,9 @@ const DashboardPage: React.FC = () => {
                       <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">BSE Sensex</p>
                       <p className="text-sm font-bold text-groww-text-primary mt-0.5">{sensex ? fmtNum(sensex.value) : '—'}</p>
                       {sensex ? (
-                        <span className={`text-xs font-semibold mt-0.5 block ${sensex.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
-                          {sensex.change_1d_pct >= 0 ? '▲' : '▼'} {fmtPct(sensex.change_1d_pct)} on the day
+                        <span className={`text-xs font-semibold mt-0.5 inline-flex items-center gap-1 ${sensex.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
+                          {sensex.change_1d_pct >= 0 ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
+                          <span>{fmtPct(sensex.change_1d_pct)} on the day</span>
                         </span>
                       ) : (
                         <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
