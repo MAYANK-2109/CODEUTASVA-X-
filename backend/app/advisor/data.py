@@ -13,6 +13,7 @@ import yfinance as yf
 CACHE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "cache" / "fundamentals.json"
 TTL_SECONDS = 24 * 3600
 LOOKUP_SECONDS = 12
+LOOKUP_WORKERS = 4   # each lookup holds a large response in memory while it is parsed
 FIELDS = {"market_cap": "marketCap", "average_volume": "averageVolume", "roe": "returnOnEquity",
           "margin": "profitMargins", "debt_to_equity": "debtToEquity", "pe": "trailingPE"}
 
@@ -50,7 +51,7 @@ def fundamentals(tickers: list[str]) -> dict[str, dict]:
     now = time.time()
     due = [t for t in dict.fromkeys(tickers) if now - cache.get(t, {}).get("fetched_at", 0) > TTL_SECONDS]
     if due:
-        pool = ThreadPoolExecutor(max_workers=min(8, len(due)))
+        pool = ThreadPoolExecutor(max_workers=min(LOOKUP_WORKERS, len(due)))
         wait([pool.submit(_lookup, ticker) for ticker in due], timeout=LOOKUP_SECONDS)
         pool.shutdown(wait=False)
         with _lock:

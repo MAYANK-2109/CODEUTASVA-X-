@@ -64,6 +64,7 @@ SECTORS = {
 }
 
 DOWNLOAD_DEADLINE_SECONDS = 30
+DOWNLOAD_THREADS = 4   # Yahoo's default is two per host core, each building its own frames
 _downloads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="prices")
 _memory: dict[str, tuple[float, object]] = {}
 
@@ -136,6 +137,7 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
 
 
 def _fetch(tickers: list[str], **kwargs) -> pd.DataFrame:
+    kwargs.setdefault("threads", DOWNLOAD_THREADS)
     closes = yf.download(
         tickers, progress=False, auto_adjust=True, timeout=15, **kwargs
     )["Close"]

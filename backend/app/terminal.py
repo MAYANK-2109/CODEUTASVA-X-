@@ -161,7 +161,9 @@ def _sentiment() -> dict:
             "source": "FinBERT" if finbert else "VADER lexicon",
             "status": LIVE if finbert else DEGRADED,
             "detail": "FinBERT scoring headlines" if finbert
-            else f'FinBERT not loaded ({state["error"] or "forced off"}); lexicon scoring in use',
+            else "FinBERT is switched off on this host to stay inside its memory; lexicon scoring in use"
+            if state["lexicon_only"]
+            else f'FinBERT not loaded ({state["error"] or "not tried yet"}); lexicon scoring in use',
             "checked_at": None, "latency_ms": None}
 
 

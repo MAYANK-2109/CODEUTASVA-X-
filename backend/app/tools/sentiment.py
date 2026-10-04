@@ -8,9 +8,12 @@ import json
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+from app.tools import memory
 
 MODEL_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "finbert"
 MODEL_FILE = MODEL_DIR / "model_quantized.onnx"
@@ -20,6 +23,9 @@ MODEL_MIN_BYTES = 100_000_000
 MAX_TOKENS = 64
 INFERENCE_THREADS = max(1, min(2, os.cpu_count() or 1))
 SCORE_CACHE_SIZE = 5000   # headlines repeat between requests, so each is scored once
+BATCH_SIZE = 16           # headlines per inference call: memory grows with the batch, speed does not
+MODEL_MEMORY_MB = 230     # what the loaded model occupies
+SHED_SECONDS = 600        # after unloading for memory, score with the lexicon for this long
 POSITIVE, NEGATIVE = 0, 1  # label order in the model's config
 
 FINBERT = "FinBERT"
@@ -46,7 +52,8 @@ _vader.lexicon.update(FINANCE_TERMS)
 
 _lock = threading.Lock()
 _scores: dict[str, float] = {}
-_finbert: dict = {"session": None, "tokenizer": None, "tried": False, "error": None}
+_inference = threading.Lock()   # one inference at a time: concurrent runs each take their own buffers
+_finbert: dict = {"session": None, "tokenizer": None, "tried": False, "error": None, "shed_until": 0.0}
 
 
 def _load_finbert() -> bool:
@@ -57,6 +64,10 @@ def _load_finbert() -> bool:
         _finbert["tried"] = True
         if not MODEL_FILE.exists() or MODEL_FILE.stat().st_size < MODEL_MIN_BYTES or not TOKENIZER_FILE.exists():
             _finbert["error"] = "model files not downloaded"
+            return False
+        if not memory.room_for(MODEL_MEMORY_MB):
+            _finbert.update(tried=False, error="not enough free memory to load the model",
+                            shed_until=time.time() + SHED_SECONDS)
             return False
         try:
             import onnxruntime
@@ -79,11 +90,31 @@ def _load_finbert() -> bool:
         return _finbert["session"] is not None
 
 
+def lexicon_only() -> bool:
+    """SENTIMENT_MODEL=vader forces the lexicon; any other value uses FinBERT
+    when it loads. Unset, the lexicon is used on Render, whose 512 MB plan
+    cannot hold the model alongside the rest of the server, and FinBERT elsewhere."""
+    return os.getenv("SENTIMENT_MODEL", "vader" if os.getenv("RENDER") else "auto").lower() == "vader"
+
+
 def backend() -> str:
-    """Which scorer is in use. SENTIMENT_MODEL=vader forces the lexicon."""
-    if os.getenv("SENTIMENT_MODEL", "auto").lower() == "vader":
+    """Which scorer is in use."""
+    if lexicon_only():
+        return VADER
+    if time.time() < _finbert["shed_until"]:
         return VADER
     return FINBERT if _load_finbert() else VADER
+
+
+def shed() -> None:
+    """Unload the model to free its memory. Headlines are scored with the
+    lexicon, and labelled so, until it is loaded again."""
+    with _inference, _lock:
+        if _finbert["session"] is None:
+            return
+        _finbert.update(session=None, tokenizer=None, tried=False, shed_until=time.time() + SHED_SECONDS,
+                        error="unloaded to stay inside the memory limit")
+        _scores.clear()
 
 
 def source_label() -> str:
@@ -95,17 +126,24 @@ def source_label() -> str:
 def _finbert_scores(texts: list[str]) -> list[float]:
     import numpy as np
 
-    encoded = _finbert["tokenizer"].encode_batch(texts)
-    feeds = {
-        "input_ids": np.array([e.ids for e in encoded], dtype=np.int64),
-        "attention_mask": np.array([e.attention_mask for e in encoded], dtype=np.int64),
-        "token_type_ids": np.array([e.type_ids for e in encoded], dtype=np.int64),
-    }
-    wanted = {i.name for i in _finbert["session"].get_inputs()}
-    logits = _finbert["session"].run(None, {k: v for k, v in feeds.items() if k in wanted})[0]
-    exp = np.exp(logits - logits.max(axis=1, keepdims=True))
-    probs = exp / exp.sum(axis=1, keepdims=True)
-    return [float(p[POSITIVE] - p[NEGATIVE]) for p in probs]
+    out: list[float] = []
+    with _inference:
+        session, tokenizer = _finbert["session"], _finbert["tokenizer"]
+        if session is None:
+            raise RuntimeError("model not loaded")
+        wanted = {i.name for i in session.get_inputs()}
+        for start in range(0, len(texts), BATCH_SIZE):
+            encoded = tokenizer.encode_batch(texts[start:start + BATCH_SIZE])
+            feeds = {
+                "input_ids": np.array([e.ids for e in encoded], dtype=np.int64),
+                "attention_mask": np.array([e.attention_mask for e in encoded], dtype=np.int64),
+                "token_type_ids": np.array([e.type_ids for e in encoded], dtype=np.int64),
+            }
+            logits = session.run(None, {k: v for k, v in feeds.items() if k in wanted})[0]
+            exp = np.exp(logits - logits.max(axis=1, keepdims=True))
+            probs = exp / exp.sum(axis=1, keepdims=True)
+            out.extend(float(p[POSITIVE] - p[NEGATIVE]) for p in probs)
+    return out
 
 
 def cutoffs() -> tuple[float, float]:
@@ -167,7 +205,8 @@ def label(mean: float) -> str:
 
 
 def status() -> dict:
-    return {"backend": backend(), "model_downloaded": MODEL_FILE.exists(), "error": _finbert["error"]}
+    return {"backend": backend(), "lexicon_only": lexicon_only(), "model_downloaded": MODEL_FILE.exists(),
+            "error": _finbert["error"]}
 
 
 def download_model() -> None:

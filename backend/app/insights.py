@@ -36,7 +36,7 @@ def portfolio(request: PortfolioRequest) -> dict:
     return _portfolio(request.holdings, request.range)
 
 
-@cached(300)
+@cached(300, heavy=True)
 def _portfolio(raw_holdings: list[dict] | None, span: str) -> dict:
     holdings, source = normalise_holdings(raw_holdings)
     closes, price_source = get_history([h["ticker"] for h in holdings])

@@ -22,3 +22,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      # The 512 MB plan cannot hold FinBERT (about 210 MB) beside the rest of the server.
+      - key: SENTIMENT_MODEL
+        value: vader

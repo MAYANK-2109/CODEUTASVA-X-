@@ -585,4 +585,4 @@ def build_alerts(raw_holdings: list[dict] | None, scenario: str | None = None) -
 
 # The bell, the dashboard and the paper account all ask for the same alerts
 # within seconds of each other; they share one build for a minute.
-cached_alerts = cached(60)(build_alerts)
+cached_alerts = cached(60, heavy=True)(build_alerts)

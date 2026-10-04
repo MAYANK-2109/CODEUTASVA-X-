@@ -302,7 +302,7 @@ def rank_sectors(state: dict, baskets: pd.DataFrame, members: dict[str, list[str
                  factors: pd.DataFrame | None, flags: list[str]) -> list[dict]:
     closes, returns, weights = state["closes"], state["returns"], state["weights"]
     sectors = list(members)
-    with ThreadPoolExecutor(max_workers=len(sectors)) as pool:
+    with ThreadPoolExecutor(max_workers=min(config.NEWS_WORKERS, len(sectors))) as pool:
         sentiment = dict(zip(sectors, pool.map(sector_sentiment, sectors)))
     analogs = analog_moves(baskets, closes)
     trained = impact.model()

@@ -1,11 +1,15 @@
 import os
 
-from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
+from app.tools import memory
 
-from app.api import router
+memory.cap_arenas()  # before any thread starts, so every thread shares the same few heaps
+
+from dotenv import load_dotenv  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+
+from app.api import router  # noqa: E402
 
 load_dotenv()
 
@@ -55,8 +59,23 @@ from app.advisor.router import router as advisor_router  # noqa: E402
 app.include_router(advisor_router)
 
 import threading  # noqa: E402
+import time  # noqa: E402
+
+import httpx  # noqa: E402
 
 from app.tools import gdelt, market, sentiment, vector_store  # noqa: E402
+
+KEEP_AWAKE_SECONDS = 600   # the free host stops a service after 15 minutes without a request
+
+
+def _keep_awake(url: str) -> None:
+    """Ask for our own public address so the host never counts the service as idle."""
+    while True:
+        time.sleep(KEEP_AWAKE_SECONDS)
+        try:
+            httpx.get(f"{url}/health", timeout=20)
+        except httpx.HTTPError:
+            pass
 
 
 @app.on_event("startup")
@@ -68,6 +87,10 @@ def start_background_work() -> None:
     market.warm_up_in_background()
     # Loading the sentiment model takes seconds; do it now, not inside the first request.
     threading.Thread(target=sentiment.backend, daemon=True, name="warm-sentiment").start()
+    # Render sets RENDER_EXTERNAL_URL; KEEP_AWAKE_URL does the same job on another host.
+    public_url = os.getenv("KEEP_AWAKE_URL") or os.getenv("RENDER_EXTERNAL_URL")
+    if public_url:
+        threading.Thread(target=_keep_awake, args=(public_url.rstrip("/"),), daemon=True, name="keep-awake").start()
 
 
 @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
@@ -77,5 +100,6 @@ def root() -> dict[str, str]:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict:
+    """Up, and how much of the memory limit is in use (null where it cannot be read)."""
+    return {"status": "ok", "memory": memory.status()}

@@ -12,6 +12,8 @@ import threading
 import time
 from functools import wraps
 
+from app.tools import memory
+
 MAX_ENTRIES = 256
 
 _guard = threading.Lock()
@@ -21,7 +23,9 @@ def enabled() -> bool:
     return "PYTEST_CURRENT_TEST" not in os.environ
 
 
-def cached(seconds: float):
+def cached(seconds: float, heavy: bool = False):
+    """heavy=True also makes a miss wait its turn behind other memory-hungry work."""
+
     def decorate(fn):
         store: dict[str, tuple[float, object]] = {}
         locks: dict[str, threading.Lock] = {}
@@ -40,7 +44,11 @@ def cached(seconds: float):
                 hit = store.get(key)
                 if hit and time.time() - hit[0] < seconds:
                     return hit[1]
-                result = fn(*args, **kwargs)
+                if heavy:
+                    with memory.heavy():
+                        result = fn(*args, **kwargs)
+                else:
+                    result = fn(*args, **kwargs)
                 if len(store) >= MAX_ENTRIES:
                     for old in sorted(store, key=lambda k: store[k][0])[: MAX_ENTRIES // 4]:
                         store.pop(old, None)

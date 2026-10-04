@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover } from '../lib/holdings'
+import { fetchWithRetry, RETRY_ATTEMPTS } from '../lib/retry'
 
 // ---------------------------------------------------------------------------
 // Types: the payload of POST /api/advisor/suggestions. Every figure in it is
@@ -109,7 +110,7 @@ interface Advice {
   narrator: string
 }
 
-type Loadable = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; data: Advice }
+type Loadable = { status: 'loading'; attempt?: number } | { status: 'error'; message: string } | { status: 'ready'; data: Advice }
 
 const BACKEND_URL: string =
   import.meta.env.VITE_BACKEND_URL ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
@@ -309,15 +310,23 @@ const IdeasPage: React.FC = () => {
           .select('name, symbol, isin, units, buy_price, type')
           .eq('user_id', user.id)
         const holdings = error ? null : (rows ?? []).filter((h) => !isLeftover(h))
-        const response = await fetch(`${BACKEND_URL}/api/advisor/suggestions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ holdings, refresh }),
-        })
+        const response = await fetchWithRetry(
+          `${BACKEND_URL}/api/advisor/suggestions`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ holdings, refresh }),
+          },
+          // Nothing to show yet: say the server is restarting instead of failing.
+          (attempt) => setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading', attempt })),
+        )
         if (!response.ok) throw new Error(`Request failed (${response.status})`)
         setState({ status: 'ready', data: await response.json() })
       } catch (e) {
-        const message = e instanceof TypeError ? 'Could not reach the backend.' : (e as Error).message
+        const restarting = e instanceof TypeError || /\((502|503|504)\)/.test((e as Error).message)
+        const message = restarting
+          ? 'The server did not come back after several tries. Wait a minute, then press Try again.'
+          : (e as Error).message
         setState((previous) => (previous.status === 'ready' ? previous : { status: 'error', message }))
       } finally {
         setRefreshing(false)
@@ -363,12 +372,25 @@ const IdeasPage: React.FC = () => {
 
       <div className="flex-1 p-4 sm:p-6 max-w-[1200px] w-full mx-auto flex flex-col gap-4 sm:gap-6">
         {state.status === 'loading' && (
-          <p className="py-24 text-center text-sm text-groww-text-secondary">
-            Ranking sectors and testing additions against your portfolio. This takes about 15 seconds…
+          <p id="ideas-loading" className="py-24 text-center text-sm text-groww-text-secondary">
+            {state.attempt
+              ? `The server is restarting. Trying again (attempt ${state.attempt} of ${RETRY_ATTEMPTS})…`
+              : 'Ranking sectors and testing additions against your portfolio. This takes up to a minute the first time…'}
           </p>
         )}
         {state.status === 'error' && (
-          <p className="rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3">{state.message}</p>
+          <div id="ideas-error" className="rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <span>{state.message}</span>
+            <button
+              onClick={() => {
+                setState({ status: 'loading' })
+                load()
+              }}
+              className="shrink-0 px-3 py-1.5 rounded-xl bg-white border border-red-200 text-xs font-semibold hover:border-red-400"
+            >
+              Try again
+            </button>
+          </div>
         )}
         {data && !ok && (
           <p id="ideas-insufficient" className="rounded-xl bg-amber-50 border border-amber-100 text-amber-800 text-sm px-4 py-3">

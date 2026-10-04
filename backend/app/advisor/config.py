@@ -33,6 +33,7 @@ MAX_CORRELATION = 0.85           # a stock that moves this closely with the port
 MIN_MARKET_CAP = 2e11            # Rs 20,000 crore
 MIN_DAILY_VALUE = 2.5e8          # Rs 25 crore traded a day
 HEADLINES_PER_SECTOR = 8
+NEWS_WORKERS = 4   # sector news searches run this many at a time
 
 WALK_FORWARD_LOOKBACK = 500
 WALK_FORWARD_HOLD = 21

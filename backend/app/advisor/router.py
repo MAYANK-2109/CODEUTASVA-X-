@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.advisor.suggest import suggest
+from app.tools import memory
 
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
 
@@ -37,10 +38,21 @@ def clean(value):
 def suggestions(request: SuggestRequest) -> dict:
     """Sector and stock suggestions for the holdings: gaps, sector ranking, picks, sizing and a walk-forward check."""
     key = hashlib.sha1(json.dumps(request.holdings, sort_keys=True, default=str).encode()).hexdigest()
-    hit = _cache.get(key)
-    if hit and not request.refresh and time.time() - hit[0] < CACHE_SECONDS:
-        return hit[1]
-    result = clean(suggest(request.holdings))
-    if result["status"] == "ok":
-        _cache[key] = (time.time(), result)
-    return result
+    asked_at = time.time()
+
+    def stored(newer_than: float = 0.0) -> dict | None:
+        hit = _cache.get(key)
+        return hit[1] if hit and hit[0] >= newer_than and time.time() - hit[0] < CACHE_SECONDS else None
+
+    answer = None if request.refresh else stored()
+    if answer:
+        return answer
+    with memory.heavy():
+        # Whoever waited here for an identical request takes its answer instead of repeating the work.
+        answer = stored(asked_at if request.refresh else 0.0)
+        if answer:
+            return answer
+        result = clean(suggest(request.holdings))
+        if result["status"] == "ok":
+            _cache[key] = (time.time(), result)
+        return result
