@@ -106,10 +106,25 @@ def test_a_dominant_holding_raises_a_concentration_alert(quiet):
     quiet(closes())
     (alert,) = by_category(alerts.build_alerts(HOLDINGS))["concentration"]
     assert "Alpha Refining is" in alert["title"] and "institutional" in alert["basis"]
+    # Two holdings: the limit is half the portfolio, not the institutional 24%.
+    assert "to bring it to 50%" in alert["solution"]["headline"] and "half the portfolio" in alert["basis"]
 
     # Ten equal positions: the largest is 10%, below the institutional 90th percentile.
     spread = [{"name": f"Co {i}", "ticker": f"C{i}.NS", "value": 100.0} for i in range(10)]
     assert alerts._concentration_alert(spread, 1000.0) == []
+
+
+def test_the_concentration_limit_comes_from_the_portfolio_itself():
+    benchmark = {"p90": 24.35}
+    assert alerts.concentration_limit(8, benchmark) == 0.25        # twice an equal share of eight
+    assert alerts.concentration_limit(2, benchmark) == 0.5         # never above half
+    assert alerts.concentration_limit(20, benchmark) == pytest.approx(0.2435)   # never below the institutional floor
+    # Eight holdings, one at 40%: the alert names the portfolio-derived rule.
+    eight = [{"name": "Big", "ticker": "BIG.NS", "value": 400.0}] + [
+        {"name": f"Co {i}", "ticker": f"C{i}.NS", "value": 600.0 / 7} for i in range(7)]
+    (alert,) = alerts._concentration_alert(eight, 1000.0)
+    assert "to bring it to 25%" in alert["solution"]["headline"]
+    assert "twice an equal share of your 8 holdings is 25%" in alert["trail"][1]["finding"]
 
 
 def test_negative_headline_about_a_holding_becomes_a_news_alert(quiet, monkeypatch):
@@ -419,7 +434,7 @@ def test_concentration_solution_sizes_the_sale_and_its_effect(quiet):
     (alert,) = by_category(alerts.build_alerts(HOLDINGS))["concentration"]
     solution = alert["solution"]
     assert solution["action"] == "rebalance" and solution["headline"].startswith("Sell ")
-    assert "Alpha Refining" in solution["headline"] and "to bring it to 24%" in solution["headline"]
+    assert "Alpha Refining" in solution["headline"] and "to bring it to 50%" in solution["headline"]
     labels = {f["label"]: f["value"] for f in solution["figures"]}
     before, after = (float(v.replace("₹", "").replace(",", "")) for v in labels["1-day 95% VaR"].split(" → "))
     assert after < before                                           # the sale lowers risk
@@ -484,7 +499,7 @@ def test_concentration_and_drill_trails_carry_their_working(quiet):
     (concentration,) = by_category(result)["concentration"]
     assert titles(concentration) == ["What was detected", "Why it is an alert", "What the sale would change",
                                      "How the action was chosen"]
-    assert "90th percentile" in concentration["trail"][1]["finding"]
+    assert "limit for one holding, 50%" in concentration["trail"][1]["finding"]
     assert "Amount to sell" in concentration["trail"][-1]["finding"]
 
     drill = next(a for a in result["alerts"] if a["hedge"] and a["hedge"]["drill"])

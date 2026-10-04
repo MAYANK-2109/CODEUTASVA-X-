@@ -302,16 +302,31 @@ def _portfolio_alert(positions: list[dict], closes, total: float, returns, beta:
     )]
 
 
+MAX_SHARE = 0.5        # no single holding may be more than half the portfolio, however few there are
+FAIR_MULTIPLE = 2      # a holding may be up to this many times an equal share before it counts as concentrated
+
+
+def concentration_limit(holdings: int, benchmark: dict) -> float:
+    """The share of the portfolio one holding may reach: twice an equal share of
+    the holdings, never below the level nine in ten institutional portfolios
+    stay under, and never above half."""
+    return min(MAX_SHARE, max(FAIR_MULTIPLE / max(holdings, 1), benchmark["p90"] / 100))
+
+
 def _concentration_alert(positions: list[dict], total: float, returns=None) -> list[dict]:
     benchmark = _trained("concentration_benchmark")
     if not benchmark or not positions:
         return []
     largest = max(positions, key=lambda p: p["value"])
     share = largest["value"] / total * 100
-    if share <= benchmark["p90"]:
+    target = concentration_limit(len(positions), benchmark)
+    if share <= target * 100:
         return []
     percentile = int(np.searchsorted(benchmark["percentiles"], share, side="right")) - 1
-    target = benchmark["p90"] / 100
+    rule = (f"twice an equal share of your {len(positions)} holdings is {FAIR_MULTIPLE / len(positions):.0%}"
+            if target == FAIR_MULTIPLE / len(positions) else
+            f"half the portfolio, the most any one holding may be" if target == MAX_SHARE else
+            f"the level nine in ten institutional portfolios stay under, {benchmark['p90']:.0f}%")
 
     var_before = var_after = None
     partners: list[tuple[str, float]] = []
@@ -329,20 +344,21 @@ def _concentration_alert(positions: list[dict], total: float, returns=None) -> l
         "warning", "concentration", largest["ticker"],
         f'{largest["name"]} is {share:.0f}% of your portfolio',
         f"One holding carries most of your risk: a 10% fall in it would cost about {_inr(largest['value'] * 0.1)}.",
-        solutions.rebalance(largest, target, total, var_before, var_after, partners),
-        f"More concentrated than {min(percentile, 99)}% of {benchmark['portfolio_quarters']:,} institutional "
-        f"portfolio-quarters ({benchmark['managers']} managers, SEC 13F filings). Their median largest "
-        f"position is {benchmark['median']:.0f}%; the target is the level nine in ten of them stay under.",
+        solutions.rebalance(largest, target, total, var_before, var_after, partners, rule),
+        f"The limit for one holding here is {target:.0%}: {rule}. For comparison, this is more concentrated than "
+        f"{min(percentile, 99)}% of {benchmark['portfolio_quarters']:,} institutional portfolio-quarters "
+        f"({benchmark['managers']} managers, SEC 13F filings), whose median largest position is {benchmark['median']:.0f}%.",
         largest["name"],
         trail=[
             _step("What was detected",
                   f'{largest["name"]} is {share:.0f}% of the portfolio: {_inr(largest["value"])} of {_inr(total)}.',
                   "Latest closing price x units held, for every priced holding."),
             _step("Why it is an alert",
-                  f"That is more concentrated than {min(percentile, 99)}% of {benchmark['portfolio_quarters']:,} "
-                  f"institutional portfolio-quarters, whose median largest position is {benchmark['median']:.0f}%. "
-                  f"The alert fires above their 90th percentile, {benchmark['p90']:.0f}%.",
-                  f"Quarterly SEC 13F filings of {benchmark['managers']} managers."),
+                  f"It is above the limit for one holding, {target:.0%}: {rule}. For comparison, that is more "
+                  f"concentrated than {min(percentile, 99)}% of {benchmark['portfolio_quarters']:,} institutional "
+                  f"portfolio-quarters, whose median largest position is {benchmark['median']:.0f}%.",
+                  f"Limit = min(50%, max(2 / holdings, institutional 90th percentile {benchmark['p90']:.0f}%)). "
+                  f"Benchmark: quarterly SEC 13F filings of {benchmark['managers']} managers."),
             _step("What the sale would change",
                   f"The 1-day 95% VaR falls from {_inr(var_before * total)} to {_inr(var_after * total)}."
                   + (" The holdings that move least with it are "

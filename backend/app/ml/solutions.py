@@ -139,7 +139,7 @@ def hold_after_move(name: str, fell: bool, pattern: str, stop: float | None, lar
 
 
 def rebalance(largest: dict, target: float, total: float, var_before: float | None, var_after: float | None,
-              partners: list[tuple[str, float]]) -> dict:
+              partners: list[tuple[str, float]], rule: str = "") -> dict:
     """Bring the largest holding down to the target share of the portfolio."""
     amount = largest["value"] - target * total
     price, units = largest.get("price"), largest.get("units")
@@ -149,8 +149,11 @@ def rebalance(largest: dict, target: float, total: float, var_before: float | No
     if price and units:
         shares = min(math.ceil(amount / price), math.floor(units))
         orders = [sell_order(largest, shares)] if shares >= 1 else []
+        # Whole shares only: the smallest sale may take the holding well under the limit.
+        lands = (largest["value"] - shares * price) / total
         headline = (f'Sell {shares:,} share{"s" if shares != 1 else ""} of {largest["name"]}, about '
-                    f"{inr(shares * price)}, to bring it to {pct(target, 0)}")
+                    f"{inr(shares * price)}, to bring it to {pct(lands, 0)}"
+                    + (f", under the {pct(target, 0)} limit" if target - lands > 0.01 else ""))
     else:
         headline = f'Sell about {inr(amount)} of {largest["name"]} to bring it to {pct(target, 0)}'
     if var_before and var_after:
@@ -164,8 +167,8 @@ def rebalance(largest: dict, target: float, total: float, var_before: float | No
          "If selling would trigger tax you want to avoid, put new money into your other holdings instead "
          "until the share comes down."],
         figures,
-        why=f"Rule: bring the largest holding down to the share that nine in ten institutional portfolios stay "
-            f"under, {pct(target, 0)}. Amount to sell = its value {inr(largest['value'])} - {pct(target, 0)} x "
+        why=f"Rule: bring the largest holding down to the limit for one holding, {pct(target, 0)}"
+            f"{f' ({rule})' if rule else ''}. Amount to sell = its value {inr(largest['value'])} - {pct(target, 0)} x "
             f"portfolio value {inr(total)} = {inr(amount)}.",
         orders=orders)
 
