@@ -21,6 +21,7 @@ from app.ml.features import FALL_SIZE, FEATURES, HORIZON, SHOCK_Z, abnormal_retu
 from app.ml.radar import PRICED_SESSIONS, radar_alerts
 from app.risk import metrics
 from app.tools import sentiment as sentiment_tool
+from app.tools.cache import cached
 from app.tools.market import NIFTY, get_history, get_macro, normalise_holdings
 from app.agents.state import inr as indian_rupees
 
@@ -580,3 +581,8 @@ def build_alerts(raw_holdings: list[dict] | None, scenario: str | None = None) -
             {"name": "Price-only logistic model", "auc": shock["test"]["auc"], "tested_on": shock["test"]["period"],
              "trained_on": shock["trained_on"]} if shock else None),
     }
+
+
+# The bell, the dashboard and the paper account all ask for the same alerts
+# within seconds of each other; they share one build for a minute.
+cached_alerts = cached(60)(build_alerts)

@@ -45,6 +45,12 @@ def test_snapshot_weights_sectors_and_beta():
     weights = [p["weight"] for p in view["positions"]]
     assert view["effective_holdings"] == pytest.approx(1 / sum(w * w for w in weights))
     assert view["var"][1] >= view["var"][0] > 0
+    # Risk shares sum to 1, and the stock with twice the market's moves carries more risk than value.
+    assert sum(p["risk_share"] for p in view["positions"]) == pytest.approx(1)
+    assert by_name["Alpha"]["risk_share"] > by_name["Alpha"]["weight"]
+    assert sum(s["risk_share"] for s in view["sectors"]) == pytest.approx(1)
+    short = exposure.snapshot(HOLDINGS, frame.iloc[-40:])            # too little history to measure risk
+    assert all(p["risk_share"] is None for p in short["positions"])
     assert exposure.snapshot([HOLDINGS[2]], frame) is None
 
 

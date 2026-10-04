@@ -8,13 +8,13 @@ import { Skeleton } from '../components/Skeleton'
 // ---------------------------------------------------------------------------
 type Range = '1y' | '3y' | '5y' | 'max'
 
-interface PriceSeries {
+export interface PriceSeries {
   ticker: string
   name: string
   values: (number | null)[]
 }
 
-interface MarketEvent {
+export interface MarketEvent {
   id: string
   date: string
   type: string
@@ -27,7 +27,7 @@ interface MarketEvent {
   moves: Record<string, number | null>
 }
 
-interface PortfolioInsights {
+export interface PortfolioInsights {
   portfolio_source: 'user' | 'sample'
   price_source: 'live' | 'cache'
   as_of: string
@@ -40,8 +40,16 @@ interface PortfolioInsights {
     beta: number | null
     largest: { name: string; weight: number }
   }
-  sectors: { sector: string; value: number; weight: number; holdings: string[] }[]
-  positions: { ticker: string; name: string; sector: string; value: number; weight: number }[]
+  sectors: { sector: string; value: number; weight: number; holdings: string[]; risk_share?: number | null }[]
+  positions: {
+    ticker: string
+    name: string
+    sector: string
+    value: number
+    weight: number
+    beta?: number | null
+    risk_share?: number | null
+  }[]
   prices: {
     dates: string[]
     series: PriceSeries[]
@@ -52,7 +60,7 @@ interface PortfolioInsights {
   weather: ChartWeather | null
 }
 
-type WeatherKind = 'rain' | 'wind' | 'heat'
+export type WeatherKind = 'rain' | 'wind' | 'heat'
 
 interface WeatherMark {
   index: number
@@ -63,7 +71,7 @@ interface WeatherMark {
   days: number
 }
 
-interface ChartWeather {
+export interface ChartWeather {
   sites: { name: string; relevance: string; holdings: { name: string; operation: string }[] }[]
   marks: WeatherMark[]
   forecast: { dates: string[]; flags: { site: number; date: string; kind: WeatherKind; value: number }[] } | null
@@ -72,7 +80,7 @@ interface ChartWeather {
   source: string
 }
 
-interface Lane {
+export interface Lane {
   site: number
   name: string
   holdings: string[]
@@ -114,16 +122,16 @@ const RANGES: { id: Range; label: string }[] = [
   { id: 'max', label: 'Max' },
 ]
 
-const SERIES_COLORS = Array.from({ length: 8 }, (_, i) => `var(--viz-series-${i + 1})`)
+export const SERIES_COLORS = Array.from({ length: 8 }, (_, i) => `var(--viz-series-${i + 1})`)
 const MAX_SELECTED = 4
 const DEFAULT_SELECTED = 3
 
-const WEATHER_KINDS: Record<WeatherKind, { label: string; unit: string; color: string; row: number }> = {
+export const WEATHER_KINDS: Record<WeatherKind, { label: string; unit: string; color: string; row: number }> = {
   rain: { label: 'heavy rain', unit: 'mm', color: 'var(--viz-series-1)', row: 0 },
   wind: { label: 'gale gusts', unit: 'km/h', color: 'var(--viz-series-7)', row: 1 },
   heat: { label: 'extreme heat', unit: '°C', color: 'var(--viz-series-2)', row: 2 },
 }
-const KIND_ORDER: WeatherKind[] = ['rain', 'wind', 'heat']
+export const KIND_ORDER: WeatherKind[] = ['rain', 'wind', 'heat']
 const LANE_H = 14
 const LANE_GAP = 3
 const KIND_H = 4
@@ -304,7 +312,7 @@ const WeatherSiteCard: React.FC<{
 // ---------------------------------------------------------------------------
 // Price chart: holdings and the Nifty indexed to 100, past events marked
 // ---------------------------------------------------------------------------
-interface Line {
+export interface Line {
   key: string
   name: string
   color: string
@@ -318,7 +326,7 @@ const niceStep = (span: number, target: number) => {
   return (unit >= 5 ? 10 : unit >= 2 ? 5 : unit >= 1 ? 2 : 1) * magnitude
 }
 
-const PriceChart: React.FC<{
+export const PriceChart: React.FC<{
   dates: string[]
   lines: Line[]
   events: MarketEvent[]

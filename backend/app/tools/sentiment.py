@@ -18,6 +18,8 @@ TOKENIZER_FILE = MODEL_DIR / "tokenizer.json"
 MODEL_REPO = "https://huggingface.co/Xenova/finbert/resolve/main"
 MODEL_MIN_BYTES = 100_000_000
 MAX_TOKENS = 64
+INFERENCE_THREADS = max(1, min(2, os.cpu_count() or 1))
+SCORE_CACHE_SIZE = 5000   # headlines repeat between requests, so each is scored once
 POSITIVE, NEGATIVE = 0, 1  # label order in the model's config
 
 FINBERT = "FinBERT"
@@ -43,6 +45,7 @@ _vader = SentimentIntensityAnalyzer()
 _vader.lexicon.update(FINANCE_TERMS)
 
 _lock = threading.Lock()
+_scores: dict[str, float] = {}
 _finbert: dict = {"session": None, "tokenizer": None, "tried": False, "error": None}
 
 
@@ -62,8 +65,13 @@ def _load_finbert() -> bool:
             tokenizer = Tokenizer.from_file(str(TOKENIZER_FILE))
             tokenizer.enable_truncation(max_length=MAX_TOKENS)
             tokenizer.enable_padding()
+            # On a shared fraction of a CPU, the default of one thread per host
+            # core makes inference slower, not faster.
+            options = onnxruntime.SessionOptions()
+            options.intra_op_num_threads = INFERENCE_THREADS
+            options.inter_op_num_threads = 1
             _finbert["session"] = onnxruntime.InferenceSession(
-                str(MODEL_FILE), providers=["CPUExecutionProvider"]
+                str(MODEL_FILE), sess_options=options, providers=["CPUExecutionProvider"]
             )
             _finbert["tokenizer"] = tokenizer
         except Exception as exc:  # optional model: any failure means "use VADER"
@@ -118,7 +126,12 @@ def score_many(texts: list[str]) -> list[float]:
         return []
     if backend() == FINBERT:
         try:
-            return _finbert_scores(texts)
+            fresh = [text for text in dict.fromkeys(texts) if text not in _scores]
+            if fresh:
+                if len(_scores) + len(fresh) > SCORE_CACHE_SIZE:
+                    _scores.clear()
+                _scores.update(zip(fresh, _finbert_scores(fresh)))
+            return [_scores[text] for text in texts]
         except Exception as exc:
             _finbert.update(session=None, error=f"{type(exc).__name__}: {exc}")
     return [_vader.polarity_scores(text)["compound"] for text in texts]

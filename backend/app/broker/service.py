@@ -15,7 +15,7 @@ import numpy as np
 
 from app.broker import ledger
 from app.broker.paper import get_broker
-from app.ml.alerts import build_alerts
+from app.ml.alerts import cached_alerts as build_alerts
 from app.ml.features import HORIZON
 from app.ml.radar import daily_turnover
 from app.risk import metrics

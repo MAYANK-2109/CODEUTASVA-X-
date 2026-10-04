@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.agents import llm
 from app.agents.graph import run
-from app.ml.alerts import build_alerts
+from app.ml.alerts import cached_alerts
 from app.tools import sentiment, vector_store
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -36,7 +36,7 @@ class AlertsRequest(BaseModel):
 def alerts(request: AlertsRequest) -> dict:
     """Live alerts for the holdings: sudden moves, elevated risk, losses,
     concentration, negative news, weather and market stress."""
-    return build_alerts(request.holdings, request.scenario)
+    return cached_alerts(request.holdings, request.scenario)
 
 
 @router.get("/alerts/drills")
@@ -70,4 +70,5 @@ def llm_status() -> dict:
 @router.post("/chat")
 def chat(request: ChatRequest) -> StreamingResponse:
     """Newline-delimited JSON: a start event, one event per agent, then the answer."""
-    return StreamingResponse(_stream(request), media_type="application/x-ndjson")
+    return StreamingResponse(_stream(request), media_type="application/x-ndjson",
+                             headers={"Content-Encoding": "identity", "X-Accel-Buffering": "no"})

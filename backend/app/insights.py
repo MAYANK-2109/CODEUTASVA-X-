@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.agents.nodes import EVENT_TYPES, HORIZON_SESSIONS
 from app.risk import exposure, metrics
+from app.tools.cache import cached
 from app.tools.events import load_events
 from app.tools.market import NIFTY, get_history, normalise_holdings
 from app.tools.weather import (
@@ -32,7 +33,12 @@ def _number(value, digits: int = 2) -> float | None:
 
 @router.post("/portfolio")
 def portfolio(request: PortfolioRequest) -> dict:
-    holdings, source = normalise_holdings(request.holdings)
+    return _portfolio(request.holdings, request.range)
+
+
+@cached(300)
+def _portfolio(raw_holdings: list[dict] | None, span: str) -> dict:
+    holdings, source = normalise_holdings(raw_holdings)
     closes, price_source = get_history([h["ticker"] for h in holdings])
     if closes is None:
         raise HTTPException(status_code=503, detail="Price history is unavailable right now.")
@@ -41,11 +47,12 @@ def portfolio(request: PortfolioRequest) -> dict:
     if view is None:
         raise HTTPException(status_code=422, detail="None of the holdings could be priced.")
     positions, total, var, beta_value = view["positions"], view["total"], view["var"], view["beta"]
-    sector_rows = [{**s, "value": round(s["value"], 2), "weight": round(s["weight"], 4)} for s in view["sectors"]]
+    sector_rows = [{**s, "value": round(s["value"], 2), "weight": round(s["weight"], 4),
+                    "risk_share": _number(s["risk_share"], 4)} for s in view["sectors"]]
 
     # Price series, indexed to 100 at the start of the window so every holding
     # and the index share one axis.
-    years = RANGE_YEARS[request.range]
+    years = RANGE_YEARS[span]
     window = closes if years is None else closes[closes.index >= closes.index[-1] - pd.DateOffset(years=years)]
     if years is None or years > 1:
         window = window.resample("W-FRI").last().dropna(how="all")
@@ -96,7 +103,8 @@ def portfolio(request: PortfolioRequest) -> dict:
         "sectors": sector_rows,
         "positions": [
             {"ticker": p["ticker"], "name": p["name"], "sector": p["sector"],
-             "value": round(p["value"], 2), "weight": round(p["weight"], 4), "beta": _number(p["beta"])}
+             "value": round(p["value"], 2), "weight": round(p["weight"], 4), "beta": _number(p["beta"]),
+             "risk_share": _number(p["risk_share"], 4)}
             for p in positions
         ],
         "prices": {
