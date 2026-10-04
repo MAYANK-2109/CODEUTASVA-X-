@@ -120,6 +120,12 @@ export interface RiskModel {
   horizon_sessions?: number
   rate_when_elevated?: number
   rate_otherwise?: number
+  // The same forecast made from one data source and from several, with 95% intervals.
+  sources?: {
+    auc: Record<string, { auc: number; interval_95: [number, number] }>
+    gains: { from: string; to: string; auc_gain: number; interval_95: [number, number]; clear: boolean }[]
+    test_period: string
+  } | null
 }
 
 export interface Alert {

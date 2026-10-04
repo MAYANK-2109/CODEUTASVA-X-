@@ -549,6 +549,91 @@ def hedge_cost_stats() -> dict:
     }
 
 
+# --------------------------------------------------------------------------- does more data help?
+
+NEWS_FEATURES = ["news_mean", "news_negative_share", "news_change"]
+BOOTSTRAP_ROUNDS = 400
+NEWS_FROM = "2015-03-01"   # the first weeks of the history have no earlier weeks to compare with
+
+
+def news_features(days: pd.DatetimeIndex) -> pd.DataFrame:
+    """For each day, the market-news mood of the last full week before it. A day
+    never sees headlines published on or after it."""
+    from app.ml import news_history
+
+    history = news_history.load()
+    if history is None:
+        raise RuntimeError("No news history; build it with: uv run python -m app.ml.news_history")
+    weekly = pd.DataFrame(history["weeks"])
+    weekly.index = pd.to_datetime(weekly["week"]) + pd.Timedelta(days=7)   # the day after the week ends
+    weekly = weekly.rename(columns={"mean": "news_mean", "negative_share": "news_negative_share"})
+    weekly["news_change"] = weekly["news_mean"] - weekly["news_mean"].shift(1).rolling(4).mean()
+    daily = weekly[NEWS_FEATURES].astype(float).reindex(weekly.index.union(days)).ffill(limit=10)
+    return daily.reindex(days)
+
+
+def _interval(values: list[float]) -> list[float]:
+    low, high = np.percentile(values, [2.5, 97.5])
+    return [round(float(low), 3), round(float(high), 3)]
+
+
+def compare_sources() -> dict:
+    """The same forecast made from one data source and from several, scored on the
+    years the models never saw. The 95% intervals come from re-drawing whole
+    trading days, since stocks on the same day move together."""
+    data, source = impact_dataset()
+    data = data.join(news_features(data.index.unique()), how="left")
+    data = data[data.index >= NEWS_FROM]
+    fit, valid = data[data.index < VALID_FROM], data[(data.index >= VALID_FROM) & (data.index < TEST_FROM)]
+    test = data[data.index >= TEST_FROM]
+    y = test["fall_ahead"].to_numpy()
+
+    feature_sets = {
+        "news sentiment alone": NEWS_FEATURES,
+        "60-day volatility alone": ["vol_60"],
+        "price history": PRICE_FEATURES,
+        "price, macro, sector and weather": IMPACT_FEATURES,
+        "all of those plus news sentiment": [*IMPACT_FEATURES, *NEWS_FEATURES],
+    }
+    scores = {}
+    for label, features in feature_sets.items():
+        model, _ = _fit_gbm(fit, valid, features, "fall_ahead", objective="binary", use_missing=True)
+        scores[label] = model.predict(test[features])
+
+    day_rows = [np.flatnonzero(test.index == day) for day in test.index.unique()]
+    rng = np.random.default_rng(7)
+    draws: dict[str, list[float]] = {label: [] for label in scores}
+    for _ in range(BOOTSTRAP_ROUNDS):
+        rows = np.concatenate([day_rows[i] for i in rng.integers(0, len(day_rows), len(day_rows))])
+        for label, score in scores.items():
+            draws[label].append(_auc(y[rows], score[rows]))
+
+    def gain(better: str, base: str) -> dict:
+        differences = [a - b for a, b in zip(draws[better], draws[base])]
+        low, high = _interval(differences)
+        return {"from": base, "to": better,
+                "auc_gain": round(_auc(y, scores[better]) - _auc(y, scores[base]), 3), "interval_95": [low, high],
+                "clear": bool(low > 0), "share_of_draws_better": round(float(np.mean(np.array(differences) > 0)), 3)}
+
+    return {
+        "evaluated_on": date.today().isoformat(),
+        "question": f"Will the stock lose {FALL_SIZE:.0%} or more over the next {HORIZON} sessions?",
+        "measure": "AUC on the test years: 0.5 is a coin toss, 1.0 is perfect",
+        "data": f"{len(test):,} stock-days of {test['ticker'].nunique()} NSE stocks ({source}); models fitted on "
+                f"{fit.index[0].date()} to {valid.index[-1].date()}",
+        "test_period": f"{test.index[0].date()} to {test.index[-1].date()}",
+        "news": "Weekly FinBERT mood of Google News headlines for \"Sensex Nifty\"; each day uses the last full "
+                "week before it",
+        "interval_method": f"{BOOTSTRAP_ROUNDS} re-draws of whole trading days",
+        "auc": {label: {"auc": round(_auc(y, score), 3), "interval_95": _interval(draws[label])}
+                for label, score in scores.items()},
+        "gains": [gain("price, macro, sector and weather", "news sentiment alone"),
+                  gain("price, macro, sector and weather", "60-day volatility alone"),
+                  gain("price, macro, sector and weather", "price history"),
+                  gain("all of those plus news sentiment", "price, macro, sector and weather")],
+    }
+
+
 def main() -> None:
     """Train everything, or only the models named on the command line."""
     only = set(sys.argv[1:])
@@ -557,7 +642,8 @@ def main() -> None:
     for name, build in (("shock_model", train_shock_model), ("sentiment_eval", evaluate_sentiment),
                         ("concentration_benchmark", concentration_benchmark),
                         ("power_assets", build_power_assets), ("storm_impact", train_storm_impact),
-                        ("hedge_cost", hedge_cost_stats), ("impact_model", train_impact_model)):
+                        ("hedge_cost", hedge_cost_stats), ("impact_model", train_impact_model),
+                        ("source_comparison", compare_sources)):
         if only and name not in only:
             continue
         print(f"\n=== {name}")

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover } from '../lib/holdings'
 import { fetchWithRetry, RETRY_ATTEMPTS } from '../lib/retry'
+import Notes from '../components/Notes'
 
 // ---------------------------------------------------------------------------
 // Types: the payload of POST /api/advisor/suggestions. Every figure in it is
@@ -139,10 +140,10 @@ const Card: React.FC<{ id: string; title: string; subtitle?: string; children: R
   subtitle,
   children,
 }) => (
-  <section id={id} className="bg-white rounded-2xl border border-groww-border-light shadow-card p-4 sm:p-5">
-    <h2 className="text-base font-bold text-groww-text-primary">{title}</h2>
-    {subtitle && <p className="text-xs text-groww-text-secondary mt-0.5">{subtitle}</p>}
-    <div className="mt-4">{children}</div>
+  <section id={id} className="bg-white rounded-2xl sm:rounded-3xl border border-groww-border-light shadow-card p-5 sm:p-7">
+    <h2 className="text-lg font-bold text-groww-text-primary">{title}</h2>
+    {subtitle && <p className="text-sm text-groww-text-secondary mt-1">{subtitle}</p>}
+    <div className="mt-5">{children}</div>
   </section>
 )
 
@@ -178,80 +179,102 @@ const BeforeAfter: React.FC<{ label: string; before: string; after: string; note
 // ---------------------------------------------------------------------------
 // One suggestion: thesis and sizing up front, the working behind a toggle
 // ---------------------------------------------------------------------------
+// A before → after figure on a suggestion card. `good` says whether the change is an improvement.
+const Delta: React.FC<{ label: string; before: string; after: string; good: boolean | null }> = ({ label, before, after, good }) => (
+  <div className="rounded-xl bg-groww-bg-primary px-3 py-2.5 min-w-0">
+    <p className="text-[11px] text-groww-text-muted truncate">{label}</p>
+    {/* A change too small to show in the figures is not coloured as better or worse. */}
+    <p className={`mt-0.5 text-base font-bold tabular-nums ${good === null || before === after ? 'text-groww-text-primary' : good ? 'text-groww-green' : 'text-red-600'}`}>
+      {after}
+    </p>
+    <p className="text-[11px] text-groww-text-muted tabular-nums">from {before}</p>
+  </div>
+)
+
+const better = (before: Maybe, after: Maybe, lowerIsBetter: boolean): boolean | null =>
+  before === null || after === null || Math.abs(after - before) < 1e-9 ? null : lowerIsBetter ? after < before : after > before
+
 const SuggestionCard: React.FC<{ suggestion: Suggestion; recommended: boolean }> = ({ suggestion, recommended }) => {
   const [open, setOpen] = useState(false)
   const { metrics, fundamentals } = suggestion
   return (
-    <li className="idea-card rounded-2xl border border-groww-border-light p-4">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="text-sm font-bold text-groww-text-primary">{suggestion.symbol}</h3>
-        <span className="text-xs text-groww-text-secondary">
-          {suggestion.sector} · stock score {suggestion.stock_score.toFixed(1)} of 100
-        </span>
+    <li className="idea-card rounded-2xl border border-groww-border-light p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-base font-bold text-groww-text-primary">{suggestion.symbol}</h3>
+          <p className="text-xs text-groww-text-secondary">
+            {suggestion.sector} · score {suggestion.stock_score.toFixed(0)}/100
+          </p>
+        </div>
         <span
-          className={`ml-auto px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+          className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold ${
             suggestion.weight && recommended ? 'bg-groww-green-light text-groww-green' : 'bg-gray-100 text-groww-text-secondary'
           }`}
+          title={suggestion.weight && !recommended ? 'Shown for information: the out-of-sample test did not support a change' : undefined}
         >
-          {suggestion.weight ? `Suggested weight ${pct(suggestion.weight)}` : 'No weight given'}
-          {suggestion.weight && !recommended ? ' (for information)' : ''}
+          {suggestion.weight ? `${pct(suggestion.weight)} weight` : 'No weight'}
         </span>
       </div>
 
-      <div className="mt-2 flex flex-col gap-1.5 text-xs text-groww-text-primary leading-relaxed">
-        {suggestion.thesis.map((line, index) => (
-          <p key={index}>{line}</p>
-        ))}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <Delta label="Volatility" before={pct(metrics.vol.before)} after={pct(metrics.vol.after)} good={better(metrics.vol.before, metrics.vol.after, true)} />
+        <Delta label="Sharpe" before={num(metrics.sharpe.before)} after={num(metrics.sharpe.after)} good={better(metrics.sharpe.before, metrics.sharpe.after, false)} />
+        <Delta label="Top risk share" before={pct(metrics.top_risk_share.before, 0)} after={pct(metrics.top_risk_share.after, 0)} good={better(metrics.top_risk_share.before, metrics.top_risk_share.after, true)} />
       </div>
-
-      <p className="mt-2 text-xs text-groww-text-secondary">
-        {suggestion.weight ? (
-          <>
-            <span className="font-semibold text-groww-text-primary">Funded by trimming: </span>
-            {suggestion.funding.slice(0, 4).map((f) => `${f.name} ${pct(f.weight, 2)}`).join(', ')}
-            {suggestion.funding.length > 4 ? ` and ${suggestion.funding.length - 4} more` : ''}
-          </>
-        ) : (
-          suggestion.sizing_note
-        )}
-      </p>
-
-      <table className="mt-3 w-full text-xs">
-        <thead>
-          <tr className="text-[11px] text-groww-text-muted">
-            <th className="text-left font-medium pb-1">
-              Portfolio with {suggestion.symbol} at {pct(suggestion.tested_at)}
-            </th>
-            <th className="text-right font-medium pb-1 px-2">Before</th>
-            <th className="text-right font-medium pb-1 pl-2">After</th>
-          </tr>
-        </thead>
-        <tbody>
-          <BeforeAfter label="Volatility, a year" before={pct(metrics.vol.before)} after={pct(metrics.vol.after)} />
-          <BeforeAfter label="CVaR, 1 day at 95%" before={pct(metrics.cvar.before, 2)} after={pct(metrics.cvar.after, 2)} />
-          <BeforeAfter
-            label="Sharpe ratio"
-            note={`90% interval after: ${interval(metrics.sharpe.after_interval)}`}
-            before={num(metrics.sharpe.before)}
-            after={num(metrics.sharpe.after)}
-          />
-          <BeforeAfter label="Effective number of positions" before={num(metrics.effective_n.before, 1)} after={num(metrics.effective_n.after, 1)} />
-          <BeforeAfter label="Largest share of risk" before={pct(metrics.top_risk_share.before, 0)} after={pct(metrics.top_risk_share.after, 0)} />
-        </tbody>
-      </table>
-      <p className="mt-1 text-[10px] text-groww-text-muted">
-        {metrics.basis}, last {metrics.sessions} sessions. Correlation with the portfolio {num(metrics.correlation)}.
-      </p>
+      <p className="mt-1.5 text-[11px] text-groww-text-muted">Your portfolio with {suggestion.symbol} at {pct(suggestion.tested_at)}</p>
 
       <button
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="mt-2 text-[11px] font-semibold text-groww-green hover:text-groww-green-dark"
+        className="idea-toggle mt-3 inline-flex items-center gap-1 text-xs font-bold text-groww-green hover:text-groww-green-dark"
       >
-        {open ? 'Hide' : 'Show'} risks, bear case and what would change this view
+        {open ? 'Hide details' : 'Why this stock, risks and bear case'}
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
       </button>
       {open && (
-        <div className="mt-2 flex flex-col gap-2.5 text-xs leading-relaxed">
+        <div className="mt-3 flex flex-col gap-3 text-xs leading-relaxed">
+          <div className="flex flex-col gap-1.5 text-groww-text-primary">
+            {suggestion.thesis.map((line, index) => (
+              <p key={index}>{line}</p>
+            ))}
+          </div>
+          <p className="text-groww-text-secondary">
+            {suggestion.weight ? (
+              <>
+                <span className="font-semibold text-groww-text-primary">Funded by trimming: </span>
+                {suggestion.funding.slice(0, 4).map((f) => `${f.name} ${pct(f.weight, 2)}`).join(', ')}
+                {suggestion.funding.length > 4 ? ` and ${suggestion.funding.length - 4} more` : ''}
+              </>
+            ) : (
+              suggestion.sizing_note
+            )}
+          </p>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[11px] text-groww-text-muted">
+                <th className="text-left font-medium pb-1">Portfolio measure</th>
+                <th className="text-right font-medium pb-1 px-2">Before</th>
+                <th className="text-right font-medium pb-1 pl-2">After</th>
+              </tr>
+            </thead>
+            <tbody>
+              <BeforeAfter label="Volatility, a year" before={pct(metrics.vol.before)} after={pct(metrics.vol.after)} />
+              <BeforeAfter label="CVaR, 1 day at 95%" before={pct(metrics.cvar.before, 2)} after={pct(metrics.cvar.after, 2)} />
+              <BeforeAfter
+                label="Sharpe ratio"
+                note={`90% interval after: ${interval(metrics.sharpe.after_interval)}`}
+                before={num(metrics.sharpe.before)}
+                after={num(metrics.sharpe.after)}
+              />
+              <BeforeAfter label="Effective number of positions" before={num(metrics.effective_n.before, 1)} after={num(metrics.effective_n.after, 1)} />
+              <BeforeAfter label="Largest share of risk" before={pct(metrics.top_risk_share.before, 0)} after={pct(metrics.top_risk_share.after, 0)} />
+            </tbody>
+          </table>
+          <p className="text-[11px] text-groww-text-muted">
+            {metrics.basis}, last {metrics.sessions} sessions. Correlation with the portfolio {num(metrics.correlation)}.
+          </p>
           <div>
             <p className="font-semibold text-groww-text-primary">Fundamentals</p>
             <p className="text-groww-text-secondary">
@@ -370,7 +393,7 @@ const IdeasPage: React.FC = () => {
         </button>
       </header>
 
-      <div className="flex-1 p-4 sm:p-6 max-w-[1200px] w-full mx-auto flex flex-col gap-4 sm:gap-6">
+      <div className="flex-1 p-4 sm:p-8 max-w-[1280px] w-full mx-auto flex flex-col gap-5 sm:gap-7">
         {state.status === 'loading' && (
           <p id="ideas-loading" className="py-24 text-center text-sm text-groww-text-secondary">
             {state.attempt
@@ -409,30 +432,35 @@ const IdeasPage: React.FC = () => {
             {/* The verdict comes first: whether the walk-forward test supports changing anything */}
             <section
               id="ideas-verdict"
-              className={`rounded-2xl border p-4 sm:p-5 ${
+              className={`rounded-2xl sm:rounded-3xl border p-5 sm:p-7 ${
                 sizing.recommend_change ? 'bg-groww-green-pale border-groww-green/30' : 'bg-amber-50 border-amber-200'
               }`}
             >
-              <p className="text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">
-                {sizing.recommend_change ? 'Recommendation: make the additions' : 'Recommendation: no change'}
+              <p className="text-xs font-bold uppercase tracking-wide text-groww-text-muted">Recommendation</p>
+              <p className="mt-1 text-2xl font-bold text-groww-text-primary">
+                {sizing.recommend_change ? 'Make the additions' : 'No change for now'}
               </p>
-              <p className="mt-1 text-sm font-semibold text-groww-text-primary">
+              <p className="mt-2 max-w-3xl text-sm text-groww-text-primary leading-relaxed">
                 {sizing.verdict ?? `Sizing unavailable: ${sizing.reason}.`}
               </p>
-              {data.narrative && <p className="mt-2 text-xs text-groww-text-primary leading-relaxed whitespace-pre-line">{data.narrative}</p>}
-              <p className="mt-2 text-[11px] text-groww-text-muted">Summary: {data.narrator}.</p>
+              {data.narrative && (
+                <Notes label="Read the reasoning" className="mt-3">
+                  <p className="text-groww-text-primary whitespace-pre-line">{data.narrative}</p>
+                  <p className="text-[11px] text-groww-text-muted">Summary: {data.narrator}.</p>
+                </Notes>
+              )}
             </section>
 
             <Card
               id="ideas-gaps"
               title="Where the portfolio has gaps"
-              subtitle={`${data.diagnosis.holdings} holdings, spread like ${data.diagnosis.effective_n.toFixed(1)} equal positions by value and ${data.diagnosis.effective_n_risk.toFixed(1)} by risk · beta to the Nifty ${num(data.diagnosis.market_beta)}`}
+              subtitle={`${data.diagnosis.holdings} holdings that behave like ${data.diagnosis.effective_n_risk.toFixed(1)} · beta ${num(data.diagnosis.market_beta)}`}
             >
               <ol className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {data.diagnosis.gaps.map((gap, index) => (
-                  <li key={gap.title} className="rounded-xl bg-groww-bg-primary border border-groww-border-light px-3.5 py-3">
-                    <p className="text-[11px] font-bold text-groww-text-muted">Gap {index + 1}</p>
-                    <p className="mt-0.5 text-sm font-semibold text-groww-text-primary">{gap.title}</p>
+                  <li key={gap.title} className="rounded-2xl bg-groww-bg-primary border border-groww-border-light p-4">
+                    <span className="inline-flex w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-xs font-bold items-center justify-center">{index + 1}</span>
+                    <p className="mt-2 text-sm font-bold text-groww-text-primary">{gap.title}</p>
                     <p className="mt-1 text-xs text-groww-text-secondary leading-relaxed">{gap.detail}</p>
                   </li>
                 ))}
@@ -459,22 +487,23 @@ const IdeasPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              <p className="mt-2 text-[11px] text-groww-text-muted">
-                Reference: {data.diagnosis.reference}.{' '}
-                {data.diagnosis.macro_betas
-                  ? `For a 1% weekly move, the portfolio moves ${num(data.diagnosis.macro_betas.brent, 2, true)}% with Brent, ${num(data.diagnosis.macro_betas.usdinr, 2, true)}% with USD/INR and ${num(data.diagnosis.macro_betas.vix, 2, true)}% with India VIX (${data.diagnosis.macro_betas.weeks} weeks).`
-                  : `Macro sensitivities: ${NONE}.`}
-              </p>
+              <Notes className="mt-4">
+                <p>
+                  The portfolio spreads like {data.diagnosis.effective_n.toFixed(1)} equal positions by value and{' '}
+                  {data.diagnosis.effective_n_risk.toFixed(1)} by risk. Reference: {data.diagnosis.reference}.
+                </p>
+                <p>
+                  {data.diagnosis.macro_betas
+                    ? `For a 1% weekly move, the portfolio moves ${num(data.diagnosis.macro_betas.brent, 2, true)}% with Brent, ${num(data.diagnosis.macro_betas.usdinr, 2, true)}% with USD/INR and ${num(data.diagnosis.macro_betas.vix, 2, true)}% with India VIX (${data.diagnosis.macro_betas.weeks} weeks).`
+                    : `Macro sensitivities: ${NONE}.`}
+                </p>
+              </Notes>
             </Card>
 
             <Card
               id="ideas-sectors"
               title="Sector ranking"
-              subtitle={`Score out of 100 = ${Object.entries(data.config.sector_weights)
-                .map(([name, weight]) => `${SCORE_LABELS[name].toLowerCase()} ${weight}`)
-                .join(' + ')}. Each sub-score is the sector's percentile among the eleven.${
-                data.regime.length ? ` Stress flags raised: ${data.regime.join(', ')}.` : ' No macro stress flag is raised.'
-              }`}
+              subtitle="Scored out of 100 for this portfolio. The top three are highlighted."
             >
               <div className="overflow-x-auto -mx-1">
                 <table className="w-full min-w-[820px] text-xs">
@@ -526,15 +555,21 @@ const IdeasPage: React.FC = () => {
                   Applies to every sector: {sharedFlags.join(' · ')}.
                 </p>
               )}
-              <p className="mt-2 text-[11px] text-groww-text-muted">
-                The top three are highlighted. News tone runs from -1 to +1, with the number of headlines in brackets.
-              </p>
+              <Notes className="mt-4">
+                <p>
+                  Score = {Object.entries(data.config.sector_weights)
+                    .map(([name, weight]) => `${SCORE_LABELS[name].toLowerCase()} ${weight}`)
+                    .join(' + ')}. Each sub-score is the sector's percentile among the eleven.
+                </p>
+                <p>{data.regime.length ? `Stress flags raised: ${data.regime.join(', ')}.` : 'No macro stress flag is raised.'}</p>
+                <p>News tone runs from -1 to +1, with the number of headlines in brackets.</p>
+              </Notes>
             </Card>
 
             <Card
               id="ideas-sizing"
-              title="Sizing and the walk-forward check"
-              subtitle={sizing.method}
+              title="Sizing and the out-of-sample test"
+              subtitle="Proposed weights, and how they would have done on data they were not fitted to."
             >
               {sizing.status !== 'ok' ? (
                 <p className="text-sm text-groww-text-secondary">Insufficient data: {sizing.reason}.</p>
@@ -564,9 +599,9 @@ const IdeasPage: React.FC = () => {
                         ))}
                       </tbody>
                     </table>
-                    <p className="mt-2 text-[11px] text-groww-text-muted">
-                      Estimated trade cost {inr(sizing.trade_cost ?? 0)} for moving {pct(sizing.turnover_share, 0)} of the portfolio
-                      {sizing.liquidity_unknown?.length ? '; liquidity was unknown for some names, so a flat cost was used' : ''}.
+                    <p className="mt-3 text-xs text-groww-text-secondary">
+                      Trade cost about {inr(sizing.trade_cost ?? 0)} to move {pct(sizing.turnover_share, 0)} of the portfolio
+                      {sizing.liquidity_unknown?.length ? ' (flat cost where liquidity is unknown)' : ''}.
                     </p>
                   </div>
                   {sizing.walk_forward && (
@@ -597,11 +632,14 @@ const IdeasPage: React.FC = () => {
                           })}
                         </tbody>
                       </table>
-                      <p className="mt-2 text-[11px] text-groww-text-muted">
-                        {sizing.walk_forward.results.proposed.n} sessions out of sample: {sizing.walk_forward.rebalances} rebalances,
-                        each held {sizing.walk_forward.hold_sessions} sessions and sized on the {sizing.walk_forward.lookback_sessions} before
-                        it. {sizing.walk_forward.note} Sharpe ratios assume a risk-free rate of {pct(data.config.risk_free_rate)}.
-                      </p>
+                      <Notes className="mt-3">
+                        <p>{sizing.method}</p>
+                        <p>
+                          {sizing.walk_forward.results.proposed.n} sessions out of sample: {sizing.walk_forward.rebalances} rebalances,
+                          each held {sizing.walk_forward.hold_sessions} sessions and sized on the {sizing.walk_forward.lookback_sessions} before
+                          it. {sizing.walk_forward.note} Sharpe ratios assume a risk-free rate of {pct(data.config.risk_free_rate)}.
+                        </p>
+                      </Notes>
                     </div>
                   )}
                 </div>
@@ -611,33 +649,34 @@ const IdeasPage: React.FC = () => {
             <Card
               id="ideas-suggestions"
               title="Stock suggestions"
-              subtitle={`Up to three stocks in each of the top three sectors: ${data.suggestions.length} in all`}
+              subtitle={`${data.suggestions.length} stocks from the top three sectors`}
             >
               {data.suggestions.length === 0 ? (
                 <p className="text-sm text-groww-text-secondary">No stock in the top sectors passed the filters.</p>
               ) : (
-                <ul className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                <ul className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 items-start">
                   {data.suggestions.map((suggestion) => (
                     <SuggestionCard key={suggestion.symbol} suggestion={suggestion} recommended={Boolean(sizing.recommend_change)} />
                   ))}
                 </ul>
               )}
-              <div className="mt-4 text-[11px] text-groww-text-muted leading-relaxed">
-                <p className="font-semibold text-groww-text-secondary">Left out, and why</p>
+              <Notes label="Stocks left out, and why" className="mt-5">
                 {data.picks.map((group) => (
                   <p key={group.sector}>
-                    {group.sector} ({group.considered} considered):{' '}
+                    <span className="font-semibold text-groww-text-primary">{group.sector}</span> ({group.considered} considered):{' '}
                     {group.excluded.length ? group.excluded.map((e) => `${e.symbol}, ${e.reason}`).join('; ') : 'none excluded'}.
                   </p>
                 ))}
-              </div>
+              </Notes>
             </Card>
 
-            <div id="ideas-notes" className="text-[11px] text-groww-text-muted leading-relaxed">
-              {data.data_notes.map((note, index) => (
-                <p key={index}>{note}</p>
-              ))}
-              <p className="mt-2 font-semibold text-groww-text-secondary">{data.footer}</p>
+            <div id="ideas-notes" className="flex flex-wrap items-start justify-between gap-3">
+              <Notes label="Data notes">
+                {data.data_notes.map((note, index) => (
+                  <p key={index}>{note}</p>
+                ))}
+              </Notes>
+              <p className="text-xs font-semibold text-groww-text-secondary">{data.footer}</p>
             </div>
           </>
         )}

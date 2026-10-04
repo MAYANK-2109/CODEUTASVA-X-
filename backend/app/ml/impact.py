@@ -82,4 +82,14 @@ def summary() -> dict | None:
         "tested_on": trained["test_period"], "trained_on": trained["trained_on"],
         "fall_size": trained["fall_size"], "horizon_sessions": trained["horizon_sessions"],
         "rate_when_elevated": fall["rate_when_elevated"], "rate_otherwise": fall["rate_otherwise"],
+        "sources": source_comparison(),
     }
+
+
+def source_comparison() -> dict | None:
+    """The same forecast from one data source and from several, with 95% intervals. None until it has been run."""
+    try:
+        found = json.loads((MODEL_FILE.parent / "source_comparison.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return {key: found[key] for key in ("auc", "gains", "test_period", "interval_method", "news")}

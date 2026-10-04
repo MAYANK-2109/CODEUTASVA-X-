@@ -1,0 +1,409 @@
+{
+ "note": "Each question lists every event type it asks about. A route is correct only if it names exactly those types, in any order.",
+ "questions": [
+  {
+   "question": "A cyclone is heading for the Gujarat coast, what should I do?",
+   "expected": [
+    "cyclone"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "IMD says a severe storm will make landfall near Odisha on Friday. Am I exposed?",
+   "expected": [
+    "cyclone"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "How did my stocks behave when big cyclones hit the east coast?",
+   "expected": [
+    "cyclone"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Cyclonic storm warning for Mumbai port, any risk to my holdings?",
+   "expected": [
+    "cyclone"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Heavy rain has flooded Chennai again. What does that do to my portfolio?",
+   "expected": [
+    "flood"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Floods in Assam and Bihar are getting worse, should I worry?",
+   "expected": [
+    "flood"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "A cloudburst has shut roads and factories in Himachal. Impact on me?",
+   "expected": [
+    "flood"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Mumbai is waterlogged after record rainfall, which of my holdings suffer?",
+   "expected": [
+    "flood"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "The monsoon is 20% below normal so far. What happens to my holdings?",
+   "expected": [
+    "monsoon_deficit"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "El Nino is likely this year, how exposed am I to a drought?",
+   "expected": [
+    "monsoon_deficit"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Rainfall deficit is widening across central India, what is my risk?",
+   "expected": [
+    "monsoon_deficit"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "If we get a weak monsoon, which of my stocks get hurt?",
+   "expected": [
+    "monsoon_deficit"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "What happens to my portfolio if crude jumps to $110?",
+   "expected": [
+    "oil_up"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Brent is surging after OPEC cut output, am I exposed?",
+   "expected": [
+    "oil_up"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Oil prices are climbing fast because of supply fears. Which holdings lose?",
+   "expected": [
+    "oil_up"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Crude has become much more expensive this month, what should I hedge?",
+   "expected": [
+    "oil_up"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Crude oil has crashed below $60. Who gains and loses in my portfolio?",
+   "expected": [
+    "oil_down"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Oil prices are falling sharply, is that good for my holdings?",
+   "expected": [
+    "oil_down"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Brent slumps as demand weakens, what does it mean for me?",
+   "expected": [
+    "oil_down"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "If crude gets a lot cheaper, how does my portfolio move?",
+   "expected": [
+    "oil_down"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "RBI just raised the repo rate by 50 bps, what now?",
+   "expected": [
+    "rate_hike"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "If interest rates go up again, which of my holdings are hit?",
+   "expected": [
+    "rate_hike"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "The central bank is tightening policy faster than expected. My risk?",
+   "expected": [
+    "rate_hike"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "A surprise rate increase by the RBI tomorrow, how bad for me?",
+   "expected": [
+    "rate_hike"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "RBI is expected to cut the repo rate next week, who benefits in my portfolio?",
+   "expected": [
+    "rate_cut"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "What happens to my holdings if interest rates are reduced?",
+   "expected": [
+    "rate_cut"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "The central bank lowered rates today. Should I change anything?",
+   "expected": [
+    "rate_cut"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Rates are coming down this year, which of my stocks gain?",
+   "expected": [
+    "rate_cut"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "The rupee has fallen to a record low against the dollar. Am I exposed?",
+   "expected": [
+    "currency_weak"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "USD/INR is at 90 and the rupee keeps depreciating, what do I do?",
+   "expected": [
+    "currency_weak"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "A weaker rupee: which of my holdings gain and which lose?",
+   "expected": [
+    "currency_weak"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "The INR is sliding fast this week, how does that hit my portfolio?",
+   "expected": [
+    "currency_weak"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "War has broken out in the Middle East, how bad is it for me?",
+   "expected": [
+    "geopolitical"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Tension on the India-Pakistan border is escalating. My risk?",
+   "expected": [
+    "geopolitical"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "The US has announced new tariffs on Indian exports, what happens to my stocks?",
+   "expected": [
+    "geopolitical"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "A missile attack on a Gulf oil port was just reported. Should I hedge?",
+   "expected": [
+    "geopolitical"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Global markets are crashing today, what is my downside?",
+   "expected": [
+    "market_shock"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "If there is a sudden sell-off like March 2020, how much do I lose?",
+   "expected": [
+    "market_shock"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "A new pandemic lockdown is announced. What happens to my portfolio?",
+   "expected": [
+    "market_shock"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "Recession fears have triggered a meltdown on Wall Street, am I safe?",
+   "expected": [
+    "market_shock"
+   ],
+   "kind": "one event"
+  },
+  {
+   "question": "How diversified am I?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Which holding has the highest beta?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Should I sell Infosys?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "What is my value at risk this week?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Compare Tata Steel and Infosys: which one is riskier?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Which sector is my portfolio most concentrated in?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "What exactly will the Tata Steel share price be on 31 December?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Is my portfolio risky right now?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "How much have I made on HDFC Bank so far?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Give me a summary of my holdings.",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "Which of my stocks moves most with the Nifty?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "What is the news sentiment on my holdings today?",
+   "expected": [],
+   "kind": "general"
+  },
+  {
+   "question": "If crude oil spikes and a cyclone hits Gujarat next week, what do I lose?",
+   "expected": [
+    "oil_up",
+    "cyclone"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "Rate hike plus a weak rupee, how do I hedge?",
+   "expected": [
+    "rate_hike",
+    "currency_weak"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "War in the Gulf pushes oil prices up sharply. What is my exposure?",
+   "expected": [
+    "geopolitical",
+    "oil_up"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "A poor monsoon and an RBI rate increase together: which holdings suffer?",
+   "expected": [
+    "monsoon_deficit",
+    "rate_hike"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "Floods in Mumbai while global markets are selling off, how bad?",
+   "expected": [
+    "flood",
+    "market_shock"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "The rupee is depreciating and crude is getting costlier. What should I do?",
+   "expected": [
+    "currency_weak",
+    "oil_up"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "If the RBI cuts rates and oil prices fall, who gains in my portfolio?",
+   "expected": [
+    "rate_cut",
+    "oil_down"
+   ],
+   "kind": "two events"
+  },
+  {
+   "question": "A cyclone on the east coast and flooding in Chennai, what is my risk?",
+   "expected": [
+    "cyclone",
+    "flood"
+   ],
+   "kind": "two events"
+  }
+ ]
+}

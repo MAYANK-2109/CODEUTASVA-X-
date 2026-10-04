@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover } from '../lib/holdings'
 import EvidenceTrail from './EvidenceTrail'
+import Notes from './Notes'
 import type { TrailDecision, TrailEvidence, TrailStep } from './EvidenceTrail'
 import { KIND_ORDER, PriceChart, SERIES_COLORS, WEATHER_KINDS } from '../pages/InsightsPage'
 import type { Lane, Line, PortfolioInsights } from '../pages/InsightsPage'
@@ -275,9 +276,7 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
           </React.Fragment>
         ))}
       </ol>
-      <p className="mt-2 text-[11px] text-groww-text-muted">
-        Green: finished. Amber with "!": ran with missing data. The three agents in the second stage run at the same time.
-      </p>
+      <p className="mt-2 text-[11px] text-groww-text-muted">Green: finished · amber "!": ran with missing data.</p>
 
       {error && <p className="mt-3 rounded-xl bg-red-50 text-red-600 px-3 py-2 text-xs">{error}</p>}
 
@@ -417,7 +416,7 @@ const PriceWeatherCard: React.FC<{
         <div>
           <h3 className="text-lg font-bold text-groww-text-primary tracking-tight">Prices, events and weather</h3>
           <p className="text-xs text-groww-text-muted mt-0.5">
-            Indexed to 100 at the start. ▼ marks a past event; the lanes below mark weather alert days at your holdings' sites.
+            Indexed to 100. ▼ past event · lanes show weather alert days.
           </p>
         </div>
         <div className="inline-flex rounded-xl border border-groww-border bg-white p-0.5" role="group" aria-label="Date range">
@@ -508,7 +507,7 @@ const RiskBreakdownCard: React.FC<{ state: Loadable<PortfolioInsights> }> = ({ s
     <section id="dashboard-risk-breakdown" className={`viz-root ${cardClass} min-w-0`}>
       <h3 className="text-lg font-bold text-groww-text-primary tracking-tight">Risk exposure breakdown</h3>
       <p className="text-xs text-groww-text-muted mt-0.5">
-        Each sector's share of the portfolio's value against its share of the risk
+        Where the money is against where the risk is
       </p>
       {state.status === 'loading' && <p className="py-16 text-center text-sm text-groww-text-secondary">Measuring exposure…</p>}
       {state.status === 'error' && <p className="mt-4 text-sm text-red-600">{state.message}</p>}
@@ -575,13 +574,18 @@ const RiskBreakdownCard: React.FC<{ state: Loadable<PortfolioInsights> }> = ({ s
               </tbody>
             </table>
           )}
-          <p className="mt-2 text-[11px] text-groww-text-muted leading-relaxed">
-            {hasRisk
-              ? 'Share of risk is each holding\'s contribution to portfolio variance over the last 250 sessions. A sector whose risk bar is longer than its value bar adds more risk than its size suggests.'
-              : 'Share of risk is unavailable: the holdings share too little price history to measure it.'}{' '}
-            1-day 95% VaR {data.stats.var_1d === null ? '—' : inr(data.stats.var_1d)} · beta{' '}
-            {data.stats.beta === null ? '—' : data.stats.beta.toFixed(2)}.
-          </p>
+          {hasRisk ? (
+            <Notes className="mt-3">
+              <p>
+                Share of risk is each holding's contribution to portfolio variance over the last 250 sessions. A sector
+                whose risk bar is longer than its value bar adds more risk than its size suggests.
+              </p>
+            </Notes>
+          ) : (
+            <p className="mt-3 text-xs text-groww-text-muted">
+              Share of risk is unavailable: the holdings share too little price history.
+            </p>
+          )}
         </>
       )}
     </section>

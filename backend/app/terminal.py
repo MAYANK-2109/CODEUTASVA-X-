@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.agents import llm
 from app.agents.nodes import GENERAL_NEWS_QUERY, HORIZON_SESSIONS
+from app.ingestion import stream
 from app.ingestion.news import get_news
 from app.risk import exposure
 from app.tools import gdelt, health, sentiment, vector_store
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/terminal", tags=["terminal"])
 
 PROBE_SECONDS = 9
 # A feed that last answered longer ago than this is asked again before it is reported.
+SUB_SECOND_MS = 1000   # the latency target for ingesting a batch
 RECHECK_SECONDS = {"indices": 300, "macro": 600, "news": 300, "weather": 1800}
 LIVE, DEGRADED, DOWN, IDLE = "live", "degraded", "down", "idle"
 
@@ -141,10 +143,12 @@ def _vector() -> dict:
     state = vector_store.status()
     if state["backend"] == vector_store.PINECONE:
         detail = f'{state["events_indexed"]} past events and {state["news_indexed"]} headlines indexed'
-        timings = [f"{label} {state[key]} ms" for label, key in
-                   (("last index", "last_news_upsert_ms"), ("last search", "last_search_ms")) if state[key] is not None]
+        if state["weather_indexed"]:
+            detail += f' and {state["weather_indexed"]} weather records'
+        timings = [f'{label} median {t["p50"]} ms, 95th percentile {t["p95"]} ms over {t["n"]} calls'
+                   for label, t in (("search", state["search_ms"]), ("index", state["index_ms"])) if t]
         if timings:
-            detail += "; " + ", ".join(timings)
+            detail += "; " + "; ".join(timings)
         status = LIVE
     else:
         detail = ("Pinecone unreachable, local text search in use" if state["configured"]
@@ -152,6 +156,26 @@ def _vector() -> dict:
         status = DEGRADED
     return {"key": "vector", "group": "model", "label": "Vector database", "source": "Pinecone",
             "status": status, "detail": detail, "checked_at": None, "latency_ms": state["last_search_ms"]}
+
+
+def _ingestion() -> dict:
+    """The background stream that fetches, scores, embeds and indexes news and weather."""
+    state = stream.status()
+    timing = state["arrival_to_indexed_ms"]
+    if not state["started"] or not state["cycles"]:
+        return {"key": "ingestion", "group": "model", "label": "Live ingestion", "source": "News and weather stream",
+                "status": IDLE if not state["error"] else DOWN, "checked_at": state["last_cycle_at"], "latency_ms": None,
+                "detail": state["error"] or "No ingestion cycle has finished yet"}
+    detail = (f'{state["headlines"]} headlines and {state["weather_records"]} weather records ingested in '
+              f'{state["cycles"]} cycle(s), one every {state["every_seconds"] // 60} minutes')
+    if timing:
+        detail += (f'; arrival to indexed: median {timing["p50"]} ms, 95th percentile {timing["p95"]} ms '
+                   f'over {timing["n"]} batches')
+    slow = bool(timing) and timing["p95"] >= SUB_SECOND_MS
+    return {"key": "ingestion", "group": "model", "label": "Live ingestion", "source": "News and weather stream",
+            "status": DEGRADED if slow or state["error"] else LIVE, "checked_at": state["last_cycle_at"],
+            "latency_ms": timing["p50"] if timing else None,
+            "detail": detail + ("; slower than one second at the 95th percentile" if slow else "")}
 
 
 def _sentiment() -> dict:
@@ -203,6 +227,7 @@ def _streams() -> dict:
         _feed("news", "News headlines", "Google News", seen.get("news")),
         _feed("weather", "Weather forecast", "Open-Meteo", seen.get("weather")),
         _geopolitics(),
+        _ingestion(),
         _vector(),
         _sentiment(),
         _llm(),

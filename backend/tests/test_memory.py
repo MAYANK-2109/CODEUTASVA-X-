@@ -113,3 +113,17 @@ def test_render_scores_with_the_lexicon_unless_told_otherwise(monkeypatch):
     monkeypatch.delenv("SENTIMENT_MODEL")
     monkeypatch.delenv("RENDER")
     assert sentiment.backend() == sentiment.FINBERT      # off Render the model is still the default
+
+
+def test_a_full_score_cache_does_not_lose_the_current_batch(monkeypatch):
+    """Emptying the cache used to drop scores the same call was about to return,
+    and the error switched the server to the lexicon for good."""
+    monkeypatch.delenv("SENTIMENT_MODEL", raising=False)
+    monkeypatch.setattr(sentiment, "_load_finbert", lambda: True)
+    monkeypatch.setattr(sentiment, "_finbert", {"session": object(), "tokenizer": object(), "tried": True,
+                                                "error": None, "shed_until": 0.0})
+    monkeypatch.setattr(sentiment, "_finbert_scores", lambda texts: [0.5] * len(texts))
+    monkeypatch.setattr(sentiment, "_scores", {"seen before": 0.5})
+    monkeypatch.setattr(sentiment, "SCORE_CACHE_SIZE", 2)
+    assert sentiment.score_many(["seen before", "new one", "new two"]) == [0.5, 0.5, 0.5]
+    assert sentiment._finbert["session"] is not None and sentiment._finbert["error"] is None

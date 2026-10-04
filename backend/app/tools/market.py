@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -74,27 +75,45 @@ def to_ticker(symbol: str) -> str:
     return symbol if "." in symbol or symbol.startswith("^") else f"{symbol}.NS"
 
 
+MAX_HOLDINGS = 200
+MAX_UNITS = 1e9          # more shares than this in one holding is a typing error, not a position
+MAX_BUY_PRICE = 1e7      # rupees per share
+
+
+def _positive_number(value, ceiling: float) -> float | None:
+    """The value as a positive finite number no larger than the ceiling, else None."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and 0 < number <= ceiling else None
+
+
 def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
     """Holdings as {ticker, name, units, buy_price, sector} and where they came from.
 
     Rows without a tradable symbol or a quantity are auto-resolved where possible.
-    With nothing usable, the sample portfolio stands in and the source says so.
+    A row whose quantity is not a sensible positive number is left out, and so is
+    a buy price that is not one. With nothing usable, the sample portfolio stands
+    in and the source says so.
     """
     from app.portfolio.extractor import resolve_symbol
     from app.tools import sectors
 
     holdings = []
-    for row in raw or []:
-        raw_sym = (row.get("symbol") or "").strip()
-        raw_name = (row.get("name") or "").strip()
-        raw_isin = (row.get("isin") or "").strip()
+    for row in (raw or [])[:MAX_HOLDINGS]:
+        if not isinstance(row, dict):
+            continue
+        raw_sym = str(row.get("symbol") or "").strip()
+        raw_name = str(row.get("name") or "").strip()
+        raw_isin = str(row.get("isin") or "").strip()
 
         # Units alias (supports 'units' or 'shares')
-        units = row.get("units") if row.get("units") is not None else row.get("shares")
-        if units is None or float(units) <= 0:
+        units = _positive_number(row.get("units") if row.get("units") is not None else row.get("shares"), MAX_UNITS)
+        if units is None:
             continue
 
-        row_type = (row.get("type") or "STOCK").upper()
+        row_type = str(row.get("type") or "STOCK").upper()
         if row_type not in ("STOCK", "ETF", "EQUITY", "COMMODITY"):
             continue
 
@@ -115,8 +134,8 @@ def normalise_holdings(raw: list[dict] | None) -> tuple[list[dict], str]:
             {
                 "ticker": ticker,
                 "name": raw_name or raw_sym or ticker,
-                "units": float(units),
-                "buy_price": float(buy_price) if buy_price is not None else None,
+                "units": units,
+                "buy_price": _positive_number(buy_price, MAX_BUY_PRICE),
                 "sector": sectors.known(ticker) or sectors.UNKNOWN,
             }
         )

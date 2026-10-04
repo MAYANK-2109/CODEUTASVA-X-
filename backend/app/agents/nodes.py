@@ -1,10 +1,12 @@
 """The seven agents. Each reads shared state and returns findings, evidence and a
 one-line summary. Numbers come from tools and app.risk.metrics, never the LLM."""
 
+import json
 import math
 import re
 import time
 from functools import wraps
+from pathlib import Path
 
 from app.agents import llm
 from app.agents.state import State, evidence, inr, pct
@@ -20,7 +22,12 @@ from app.tools.weather import (
 
 HORIZON_SESSIONS = 5
 MAX_EVENTS = 6
+MAX_SCENARIOS = 2   # a question may name more than one event; this many are analysed
+# A size stated in the question ("15%", "$110", "50 bps") that the event study does not scale to.
+STATED_SIZE = re.compile(r"(?:[$₹]\s?\d[\d,.]*|\d[\d,.]*\s?(?:%|percent|per cent|bps|basis points))", re.I)
 MAX_FORECAST_HOLDINGS = 8
+MAX_INDEXED_HEADLINES = 5
+ROUTING_EVAL_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "trained" / "routing_eval.json"
 
 UP = r"(?:up|spik\w*|surg\w*|ris\w*|rose|jump\w*|soar\w*|higher|shock|expensive|hik\w*|rais\w*|increas\w*|tighten\w*)"
 DOWN = r"(?:down|crash\w*|fall\w*|fell|drop\w*|plung\w*|slump\w*|lower|cheap\w*|cut\w*|reduc\w*|eas\w*)"
@@ -51,10 +58,10 @@ GENERAL_NEWS_QUERY = "Nifty Sensex stock market"
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
-        "event_type": {"type": "string", "enum": [*EVENT_TYPES, "none"]},
+        "event_types": {"type": "array", "items": {"type": "string", "enum": list(EVENT_TYPES)}},
         "news_query": {"type": "string"},
     },
-    "required": ["event_type", "news_query"],
+    "required": ["event_types", "news_query"],
     "additionalProperties": False,
 }
 
@@ -85,24 +92,41 @@ def agent(name: str):
 # --------------------------------------------------------------------------- supervisor
 
 
-def classify_event(query: str) -> str | None:
+def _routing_record(planner: str) -> str:
+    """How often this router named exactly the right events on the labelled question set."""
+    try:
+        measured = json.loads(ROUTING_EVAL_FILE.read_text())["llm" if planner == "llm" else "rules"]
+        return (f' On a labelled set of {measured["questions"]} questions it named exactly the right events '
+                f'for {measured["correct"]} ({measured["accuracy"]:.0%}).')
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+
+
+def classify_events(query: str) -> list[str]:
+    """Every event type the question names, in the order the types are listed."""
     text = query.lower()
-    for event_type, (_, pattern) in EVENT_TYPES.items():
-        if re.search(pattern, text):
-            return event_type
-    return None
+    return [event_type for event_type, (_, pattern) in EVENT_TYPES.items() if re.search(pattern, text)]
+
+
+def classify_event(query: str) -> str | None:
+    found = classify_events(query)
+    return found[0] if found else None
 
 
 def _llm_plan(query: str) -> dict | None:
     result = llm.complete(
         "You route questions for a portfolio risk assistant covering Indian equities. "
-        "Pick the single event type the question is about, or 'none' if it is a general "
-        "question about the portfolio. Write news_query as 3-6 search keywords for the event.",
+        "List in event_types every event the question asks about, most important first. A question "
+        "that names two events gets both. Leave the list empty for a general question about the "
+        "portfolio, or about a company, that names no such event. Write news_query as 3-6 search "
+        "keywords for the question.",
         query,
         PLAN_SCHEMA,
     )
-    if not isinstance(result, dict) or result.get("event_type") not in (*EVENT_TYPES, "none"):
+    if not isinstance(result, dict) or not isinstance(result.get("event_types"), list) \
+            or not isinstance(result.get("news_query"), str):
         return None
+    result["event_types"] = [t for t in dict.fromkeys(result["event_types"]) if t in EVENT_TYPES]
     return result
 
 
@@ -111,15 +135,30 @@ def supervisor(state: State) -> dict:
     query = state["query"]
     planned = _llm_plan(query)
     if planned:
-        event_type = None if planned["event_type"] == "none" else planned["event_type"]
-        news_query, planner = planned["news_query"].strip(), "llm"
+        found, news_query, planner = planned["event_types"], planned["news_query"].strip(), "llm"
     else:
-        event_type = classify_event(query)
-        news_query = " ".join(tokenize(query)[:6]) if event_type else GENERAL_NEWS_QUERY
+        found = classify_events(query)
+        news_query = " ".join(tokenize(query)[:6]) if found else GENERAL_NEWS_QUERY
         planner = "rules"
     news_query = news_query or GENERAL_NEWS_QUERY
+    event_types, left_out = found[:MAX_SCENARIOS], found[MAX_SCENARIOS:]
+    event_type = event_types[0] if event_types else None
 
-    label = EVENT_TYPES[event_type][0] if event_type else None
+    # Whatever part of the question is not analysed is said, not dropped silently.
+    gaps = []
+    if left_out:
+        gaps.append("The question also names " + ", ".join(EVENT_TYPES[t][0] for t in left_out)
+                    + f", which is not analysed: at most {MAX_SCENARIOS} scenarios are covered per question")
+    if len(event_types) > 1:
+        gaps.append("The question names " + " and ".join(EVENT_TYPES[t][0] for t in event_types)
+                    + ". The estimate averages past events of either kind; no past event in the library "
+                      "combined them, so their effects are not added together")
+    sizes = STATED_SIZE.findall(query) if event_types else []
+    if sizes:
+        gaps.append(f"The question states a size ({', '.join(dict.fromkeys(s.strip() for s in sizes))}). The "
+                    "estimate is the average move in past events of this kind and is not scaled to that size")
+
+    label = " and ".join(EVENT_TYPES[t][0] for t in event_types) if event_types else None
     subtasks = {
         "sentiment": f'Score news sentiment for "{news_query}" and for the holdings',
         "weather_macro": "Check the 7-day weather outlook at key economic sites and the macro backdrop",
@@ -131,11 +170,13 @@ def supervisor(state: State) -> dict:
     return {
         "plan": {
             "event_type": event_type,
+            "event_types": event_types,
             "event_label": label,
             "news_query": news_query,
             "subtasks": subtasks,
             "planner": planner,
         },
+        "gaps": gaps,
         "summary": f"Identified scenario: {label}" if label else "General portfolio question, no specific event",
     }
 
@@ -182,9 +223,27 @@ def sentiment(state: State) -> dict:
             )
         )
 
+    # Headlines the ingestion stream indexed earlier, found by meaning rather than by keyword.
+    seen = {item["title"] for item in topic_items + held_items}
+    indexed, backend = vector_store.search_news(state["query"], MAX_INDEXED_HEADLINES + len(seen))
+    indexed = [item for item in indexed if item["title"] not in seen][:MAX_INDEXED_HEADLINES]
+    earlier = sentiment_tool.score_headlines(indexed)
+    if earlier:
+        closest = max(indexed, key=lambda item: item["similarity"])
+        rows.append(
+            evidence(
+                "S", len(rows) + 1,
+                f'Earlier headlines closest to the question: mean sentiment {earlier["mean"]:+.2f} '
+                f'({sentiment_tool.label(earlier["mean"])}) across {earlier["count"]} headlines. Closest '
+                f'(similarity {closest["similarity"]:.2f}): "{closest["title"]}"',
+                ("Pinecone vector search" if backend == vector_store.PINECONE else "local text search")
+                + " over indexed headlines; " + sentiment_tool.source_label(),
+            )
+        )
+
     primary = topic or held
     return {
-        "findings": {"sentiment": {"topic": topic, "holdings": held}},
+        "findings": {"sentiment": {"topic": topic, "holdings": held, "indexed": earlier}},
         "evidence": rows,
         "gaps": gaps,
         "status": "done" if primary else "degraded",
@@ -338,7 +397,22 @@ def historical(state: State) -> dict:
             "summary": "Price history unavailable",
         }
 
-    matches, backend = vector_store.search_events(state["query"], state["plan"]["event_type"], MAX_EVENTS)
+    # A question that names no event has nothing to compare with. A similarity
+    # search would still return its nearest events, however unrelated, and a
+    # forecast built on them would be invented.
+    event_types = state["plan"]["event_types"]
+    if not event_types:
+        return {
+            "findings": {"historical": {"events": [], "per_holding": {}, "nifty_mean": None}},
+            "summary": "General question: no past event to compare with",
+        }
+    per_type = MAX_EVENTS if len(event_types) == 1 else max(2, MAX_EVENTS // len(event_types))
+    matches, backends = [], set()
+    for event_type in event_types:
+        found, used = vector_store.search_events(state["query"], event_type, per_type)
+        matches += found
+        backends.add(used)
+    backend = vector_store.PINECONE if backends == {vector_store.PINECONE} else vector_store.LOCAL
     search = "Pinecone vector search" if backend == vector_store.PINECONE else "local text search"
     events, rows = [], []
     for event in matches:
@@ -589,8 +663,9 @@ def hedging(state: State) -> dict:
     uses = [i for i in ((scenario or {}).get("row"), risk_view.get("var_row")) if i]
     if scenario is None:
         action = "monitor"
-        comparison = ("No comparable past events were found, so there is no expected loss to compare with the "
-                      "VaR. The portfolio is monitored, not hedged.")
+        comparison = (("No comparable past events were found" if state["plan"]["event_types"]
+                       else "The question names no market event") + ", so there is no expected loss to compare "
+                      "with the VaR. The portfolio is monitored, not hedged.")
         claim = "No event scenario could be built, so no event-specific hedge is sized."
         if full_notional:
             claim += (f" For reference, shorting {inr(full_notional)} of Nifty 50 futures "
@@ -749,7 +824,9 @@ def _template(state: State, rows: list[dict]) -> str:
             f'{pct(scenario["mean"])} ({inr(scenario["pnl"])}) on average over {HORIZON_SESSIONS} sessions '
             f"[{scenario_id}]. {verdict}")
     elif risk_view:
-        lines.append(f"**Bottom line:** no comparable past events were found, so there is no event estimate. "
+        reason = ("no comparable past events were found" if state["plan"]["event_types"]
+                  else "the question names no market event, and prices are not predicted")
+        lines.append(f"**Bottom line:** {reason}, so there is no event forecast. "
                      f'Your portfolio is worth {inr(risk_view["total"])} [R1]. {verdict}')
     else:
         lines.append("**Bottom line:** prices could not be fetched, so risk could not be measured.")
@@ -793,15 +870,16 @@ def _llm_answer(state: State, rows: list[dict], draft: str) -> tuple[str | None,
     forecast_ids = _forecast_rows(state)
     text = llm.complete(
         "You are the synthesiser of a portfolio risk assistant. Answer the user's question directly in "
-        "under 200 words, in plain language, for an investor.\n"
+        "under 110 words, in plain language, for an investor. At most four short bullets.\n"
         "Rules: use only facts from the evidence list. Copy every figure exactly as written there; do not "
         "round, convert or calculate new numbers. Put the supporting evidence ID in square brackets after "
         "each claim, like [R3]. Start with a line beginning '**Bottom line:**'. Then short '- ' bullets. "
         "Say plainly if evidence is missing. No headings, no disclaimers.\n"
         + (f"The evidence holds a forecast in {' and '.join(forecast_ids)}. Whatever the hedge decision, "
            "even when no hedge is needed, give one bullet starting 'Forecast for your holdings:' naming the "
-           "holdings expected to fall most and to rise most with their figures, and, if there is a commodity "
-           "row, one bullet starting 'Forecast for commodities:' with each commodity and the rupee. Then the "
+           "holding with the lowest forecast and the one with the highest, each with its figure. Call a move a "
+           "fall only if its figure is negative and a rise only if it is positive. If there is a commodity "
+           "row, add one bullet starting 'Forecast for commodities:' with each commodity and the rupee. Then the "
            "recommendation." if forecast_ids else ""),
         f'Question: {state["query"]}\n\nEvidence:\n{listing}\n\nDraft answer for reference:\n{draft}',
     )
@@ -845,7 +923,8 @@ def _trail(state: State, rows: list[dict], text: str, problem: str | None) -> li
         "supervisor": (
             f"Gemini read the question and picked the scenario from a fixed list of {len(EVENT_TYPES)} event types."
             if plan["planner"] == "llm" else
-            f"Keyword rules matched the question against {len(EVENT_TYPES)} event types; no language model was used."),
+            f"Keyword rules matched the question against {len(EVENT_TYPES)} event types; no language model was used."
+        ) + _routing_record(plan["planner"]),
         "sentiment": (
             f"Fetched recent headlines from Google News for the scenario and for your holdings, then scored each "
             f"with {sentiment_tool.backend()}. A score runs from -1 (negative) to +1 (positive); {negative:+.2f} "

@@ -124,7 +124,7 @@ def test_streams_report_what_each_source_last_did(quiet, monkeypatch):
     assert "1 of 5 themes read" in report["geopolitics"]["detail"] and "India-Pakistan" in report["geopolitics"]["detail"]
     assert report["llm"]["status"] == "live" and "3 call(s)" in report["llm"]["detail"]
     counts = client.get("/api/terminal/streams").json()["counts"]
-    assert sum(counts.values()) == 9 and counts["down"] == 1
+    assert sum(counts.values()) == 10 and counts["down"] == 1
 
 
 def test_sources_record_their_own_outcome(monkeypatch):
@@ -138,3 +138,43 @@ def test_sources_record_their_own_outcome(monkeypatch):
     assert weather.get_weather_outlook() is None
     entry = health.snapshot()["weather"]
     assert entry["ok"] is False and entry["last_ok_at"] is None and entry["detail"] == "ConnectError"
+
+
+# --------------------------------------------------------------------------- continuous ingestion
+
+def test_ingestion_scores_and_indexes_only_new_headlines_and_times_the_batch(monkeypatch):
+    from app.ingestion import stream
+
+    items = [{"title": "Steel makers gain as iron ore eases", "url": "u1", "source": "A", "published_at": None},
+             {"title": "Refiners slip on weak margins", "url": "u2", "source": "B", "published_at": None}]
+    monkeypatch.setattr(stream, "get_news", lambda query, limit: items)
+    monkeypatch.setattr(vector_store, "_indexed_news", set())
+    monkeypatch.setattr(vector_store, "_recent_news", type(vector_store._recent_news)(maxlen=50))
+    monkeypatch.setattr(stream, "_batches", type(stream._batches)(maxlen=50))
+    monkeypatch.setenv("SENTIMENT_MODEL", "vader")
+
+    first = stream.ingest_news("steel")
+    assert first["items"] == 2 and first["total_ms"] >= first["score_ms"] >= 0
+    assert stream.ingest_news("steel") is None            # nothing new the second time
+    assert stream.status()["arrival_to_indexed_ms"]["n"] == 1
+    # What was ingested can be found again by meaning-bearing words, without Pinecone.
+    found, backend = vector_store.search_news("iron ore and steel makers", 3)
+    assert backend == vector_store.LOCAL and found[0]["title"] == items[0]["title"]
+
+
+def test_weather_outlook_becomes_one_record_per_site_and_day():
+    from app.ingestion import stream
+
+    outlook = [{"name": "Delhi NCR", "days": [{"date": "2026-10-05", "rain_mm": 0.0, "gust_kmh": 31.0, "temp_c": 36.2},
+                                             {"date": "2026-10-06", "rain_mm": None, "gust_kmh": None, "temp_c": 35.0}]}]
+    records = stream.weather_records(outlook)
+    assert [r["_id"] for r in records] == ["weather-delhi-ncr-2026-10-05", "weather-delhi-ncr-2026-10-06"]
+    assert records[0][vector_store.TEXT_FIELD] == (
+        "Weather forecast for Delhi NCR on 2026-10-05: rain 0.0 mm, gusts 31.0 km/h, maximum temperature 36.2 C")
+    assert records[1][vector_store.TEXT_FIELD].endswith("maximum temperature 35.0 C")   # missing values are left out
+
+
+def test_percentiles_report_the_median_and_the_slow_tail():
+    assert vector_store.percentiles([]) is None
+    timings = list(range(1, 101))
+    assert vector_store.percentiles(timings) == {"p50": 51, "p95": 96, "n": 100}

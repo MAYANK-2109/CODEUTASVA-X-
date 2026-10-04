@@ -17,10 +17,10 @@ const BACKEND_URL: string =
 const REFRESH_MS = 180_000
 
 // Status is never shown by colour alone: each level has its own mark and label.
-const SEVERITY: Record<Severity, { Icon: React.FC<{ className?: string }>; label: string; chip: string; border: string }> = {
-  critical: { Icon: IconCritical, label: 'Critical', chip: 'bg-red-50 text-red-600', border: 'border-l-red-500' },
-  warning: { Icon: IconWarning, label: 'Warning', chip: 'bg-amber-50 text-amber-700', border: 'border-l-amber-500' },
-  info: { Icon: IconInfo, label: 'Info', chip: 'bg-gray-100 text-groww-text-secondary', border: 'border-l-gray-300' },
+const SEVERITY: Record<Severity, { Icon: React.FC<{ className?: string }>; label: string; chip: string; tile: string; card: string }> = {
+  critical: { Icon: IconCritical, label: 'Critical', chip: 'bg-red-50 text-red-600', tile: 'bg-red-50 text-red-600', card: 'border-red-200' },
+  warning: { Icon: IconWarning, label: 'Warning', chip: 'bg-amber-50 text-amber-700', tile: 'bg-amber-50 text-amber-700', card: 'border-amber-200' },
+  info: { Icon: IconInfo, label: 'Info', chip: 'bg-gray-100 text-groww-text-secondary', tile: 'bg-gray-100 text-groww-text-secondary', card: 'border-groww-border-light' },
 }
 const NEEDS_ATTENTION: Severity[] = ['critical', 'warning']
 
@@ -57,7 +57,7 @@ const percent = (fraction: number, digits = 0) => `${(Math.abs(fraction) * 100).
 const orderText = (order: PaperOrder) =>
   order.type === 'sell'
     ? `Sell ${order.quantity?.toLocaleString('en-IN')} ${order.name} @ ${inr(order.price ?? 0)}`
-    : `Buy put on ${inr(order.notional ?? 0)} of ${order.name}, about ${inr(order.premium ?? 0)}`
+    : `Put on ${inr(order.notional ?? 0)} of ${order.name}, ~${inr(order.premium ?? 0)}`
 
 const time = (iso: string) =>
   new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -200,6 +200,9 @@ const PaperLedger: React.FC<{
 // ---------------------------------------------------------------------------
 // One alert: what happened, then the recommended action with its steps
 // ---------------------------------------------------------------------------
+// Up to this many figures sit on the card; the rest are one tap away under Details.
+const CARD_FIGURES = 2
+
 const AlertItem: React.FC<{
   alert: Alert
   execution: PaperExecution | undefined
@@ -207,137 +210,129 @@ const AlertItem: React.FC<{
 }> = ({ alert, execution, onExecute }) => {
   const style = SEVERITY[alert.severity]
   const { solution } = alert
-  // Alerts that need attention open with their steps; the rest show the action and expand on request.
-  const [open, setOpen] = useState(NEEDS_ATTENTION.includes(alert.severity) || Boolean(alert.hedge?.drill))
-  const [showTrail, setShowTrail] = useState(true)
+  // The card shows what happened and what to do. The reasoning opens on request.
+  const [open, setOpen] = useState(Boolean(alert.hedge?.drill))
   const [executing, setExecuting] = useState(false)
   const [executeError, setExecuteError] = useState<string | null>(null)
   const trail = alert.trail ?? []
   const orders = alert.hedge?.drill ? [] : (solution.orders ?? [])
+  const shown = open ? solution.figures : solution.figures.slice(0, CARD_FIGURES)
   const run = async () => {
     setExecuting(true)
     setExecuteError(await onExecute(alert))
     setExecuting(false)
   }
   return (
-    <li className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
-      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
-        <style.Icon className="w-2.5 h-2.5 shrink-0" />
-        <span>{style.label}</span>
-      </span>
-      <p className="mt-1.5 text-sm font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
-      <p className="mt-1 text-xs text-groww-text-secondary leading-relaxed">{alert.detail}</p>
-
-      <div className="alert-solution mt-2 rounded-xl bg-groww-bg-primary border border-groww-border-light px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Recommended action</span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${ACTION[solution.action].chip}`}>
-            {ACTION[solution.action].label}
-          </span>
+    <li className={`alert-card rounded-2xl border bg-white shadow-sm overflow-hidden ${style.card}`}>
+      <div className="flex items-start gap-3 px-3.5 pt-3.5">
+        <span className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center ${style.tile}`} title={style.label}>
+          <style.Icon className="w-3.5 h-3.5" />
+          <span className="sr-only">{style.label}</span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-[13px] font-bold text-groww-text-primary leading-snug">{alert.title}</p>
+            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${ACTION[solution.action].chip}`}>
+              {ACTION[solution.action].label}
+            </span>
+          </div>
+          <p className="alert-solution mt-1 flex gap-1.5 text-xs text-groww-text-primary leading-snug">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-[3px] text-groww-green" aria-hidden>
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+            <span>{solution.headline}</span>
+          </p>
         </div>
-        <p className="mt-1 text-[13px] font-semibold text-groww-text-primary leading-snug">{solution.headline}</p>
+      </div>
 
-        {open && (
-          <>
-            {solution.figures.length > 0 && (
-              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
-                {solution.figures.map((figure) => (
-                  <div key={figure.label}>
-                    <dt className="text-groww-text-muted">{figure.label}</dt>
-                    <dd className="font-semibold text-groww-text-primary tabular-nums">{figure.value}</dd>
-                  </div>
+      {shown.length > 0 && (
+        <dl className="mt-2.5 mx-3.5 grid grid-cols-2 gap-1.5">
+          {shown.map((figure) => (
+            <div key={figure.label} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
+              <dt className="text-[10px] text-groww-text-muted leading-tight truncate" title={figure.label}>{figure.label}</dt>
+              <dd className="text-xs font-bold text-groww-text-primary tabular-nums leading-snug">{figure.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {open && (
+        <div className="alert-details mt-2.5 mx-3.5 flex flex-col gap-2.5">
+          <p className="text-xs text-groww-text-secondary leading-relaxed">{alert.detail}</p>
+          <ol className="flex flex-col gap-1.5 text-xs text-groww-text-primary leading-relaxed">
+            {solution.steps.map((step, index) => (
+              <li key={index} className="flex gap-2">
+                <span className="shrink-0 w-4 h-4 mt-0.5 rounded-full bg-groww-green-light text-[10px] font-bold text-groww-green flex items-center justify-center">
+                  {index + 1}
+                </span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+          {solution.alternative && (
+            <p className="text-[11px] text-groww-text-secondary leading-relaxed">
+              <span className="font-semibold text-groww-text-primary">Alternative: </span>
+              {solution.alternative}
+            </p>
+          )}
+          {/* Evidence trail: from the signal to the decision, one step at a time */}
+          {trail.length > 0 && (
+            <div className="alert-trail rounded-xl bg-groww-bg-primary px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Evidence trail</p>
+              <ol className="mt-2 flex flex-col">
+                {trail.map((step, index) => (
+                  <li key={index} className="relative flex gap-2.5 pb-2.5 last:pb-0">
+                    {/* The line that joins one step to the next */}
+                    {index < trail.length - 1 && (
+                      <span className="absolute left-[9px] top-5 bottom-0 w-px bg-groww-border" aria-hidden />
+                    )}
+                    <span className="relative shrink-0 w-[19px] h-[19px] rounded-full bg-groww-green text-white text-[10px] font-bold flex items-center justify-center">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 text-xs leading-relaxed">
+                      <p className="font-semibold text-groww-text-primary">{step.title}</p>
+                      <p className="text-groww-text-secondary">{step.finding}</p>
+                      {step.method && <p className="mt-0.5 text-[11px] text-groww-text-muted">{step.method}</p>}
+                    </div>
+                  </li>
                 ))}
-              </dl>
-            )}
-            <ol className="mt-2 flex flex-col gap-1.5 text-xs text-groww-text-primary leading-relaxed">
-              {solution.steps.map((step, index) => (
-                <li key={index} className="flex gap-2">
-                  <span className="shrink-0 w-4 h-4 mt-0.5 rounded-full bg-white border border-groww-border text-[10px] font-bold text-groww-text-secondary flex items-center justify-center">
-                    {index + 1}
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-            {solution.alternative && (
-              <p className="mt-2 pt-2 border-t border-groww-border-light text-[11px] text-groww-text-secondary leading-relaxed">
-                <span className="font-semibold text-groww-text-primary">Alternative: </span>
-                {solution.alternative}
-              </p>
-            )}
-          </>
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+
+      {execution && (
+        <div className="mx-3.5 mt-2.5">
+          <ExecutionResult execution={execution} />
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-2 px-3.5 py-2.5 border-t border-groww-border-light bg-groww-bg-primary/60">
+        {/* One-click execution in the paper account */}
+        {orders.length > 0 && !execution && (
+          <button
+            onClick={run}
+            disabled={executing}
+            title="Simulated fill with slippage in the paper account. No real order is placed; the portfolio VaR is rechecked after the fill."
+            className="paper-execute min-w-0 rounded-lg bg-groww-green text-white text-[11px] font-bold px-3 py-1.5 text-left leading-snug hover:bg-groww-green-dark disabled:opacity-60 transition-colors"
+          >
+            {executing ? 'Executing…' : `Paper trade: ${orderText(orders[0])}`}
+            {!executing && orders.length > 1 ? ` +${orders.length - 1}` : ''}
+          </button>
         )}
         <button
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="mt-2 text-[11px] font-semibold text-groww-green hover:text-groww-green-dark"
+          className="alert-toggle ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-groww-green hover:text-groww-green-dark"
         >
-          {open ? 'Hide steps' : `Show ${solution.steps.length} step${solution.steps.length === 1 ? '' : 's'} and figures`}
+          {open ? 'Hide' : trail.length ? `Evidence trail · ${trail.length} steps` : 'Details'}
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
         </button>
-
-        {/* One-click execution in the paper account */}
-        {orders.length > 0 && !execution && (
-          <div className="mt-2 pt-2 border-t border-groww-border-light">
-            <button
-              onClick={run}
-              disabled={executing}
-              className="paper-execute w-full rounded-lg bg-groww-green text-white text-xs font-bold px-3 py-2 hover:bg-groww-green-dark disabled:opacity-60 transition-colors"
-            >
-              {executing ? 'Executing…' : `Execute in paper account: ${orderText(orders[0])}`}
-              {!executing && orders.length > 1 ? ` and ${orders.length - 1} more` : ''}
-            </button>
-            <p className="mt-1 text-[10px] text-groww-text-muted">
-              Simulated fill with slippage; no real order is placed. The portfolio VaR is rechecked after the fill.
-            </p>
-            {executeError && <p className="mt-1 text-[11px] text-red-600">{executeError}</p>}
-          </div>
-        )}
-        {execution && <ExecutionResult execution={execution} />}
       </div>
-
-      {/* Evidence trail: from the signal to the decision, one step at a time */}
-      {trail.length > 0 && (
-        <div className="alert-trail mt-2">
-          <button
-            onClick={() => setShowTrail((value) => !value)}
-            aria-expanded={showTrail}
-            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-groww-green hover:text-groww-green-dark"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M9 6h11M9 12h11M9 18h11" />
-              <circle cx="4" cy="6" r="1.2" />
-              <circle cx="4" cy="12" r="1.2" />
-              <circle cx="4" cy="18" r="1.2" />
-            </svg>
-            {showTrail ? `Evidence trail: how this was worked out (${trail.length} steps) · hide` : `Show evidence trail (${trail.length} steps)`}
-          </button>
-          {showTrail && (
-            <ol className="mt-2 flex flex-col">
-              {trail.map((step, index) => (
-                <li key={index} className="relative flex gap-2.5 pb-3 last:pb-0">
-                  {/* The line that joins one step to the next */}
-                  {index < trail.length - 1 && (
-                    <span className="absolute left-[9px] top-5 bottom-0 w-px bg-groww-border" aria-hidden />
-                  )}
-                  <span className="relative shrink-0 w-[19px] h-[19px] rounded-full bg-groww-green text-white text-[10px] font-bold flex items-center justify-center">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 text-xs leading-relaxed">
-                    <p className="font-semibold text-groww-text-primary">{step.title}</p>
-                    <p className="text-groww-text-secondary">{step.finding}</p>
-                    {step.method && (
-                      <p className="mt-0.5 text-[11px] text-groww-text-muted">
-                        <span className="font-semibold">How: </span>
-                        {step.method}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      )}
+      {executeError && <p className="px-3.5 pb-2 text-[11px] text-red-600 bg-groww-bg-primary/60">{executeError}</p>}
     </li>
   )
 }
@@ -404,12 +399,38 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
         </tbody>
       </table>
       {model?.rate_when_elevated !== undefined && model.rate_otherwise !== undefined && (
-        <p className="mt-3 text-[11px] text-groww-text-muted leading-relaxed">
-          {model.name}, tested on {model.tested_on.replace(' to ', ' – ')}: on days it flagged, a fall of {fallSize} or
-          more followed {percent(model.rate_when_elevated)} of the time, against {percent(model.rate_otherwise)} otherwise.
-          AUC {model.auc} using price, macro, sector and weather data; {model.auc_price_only} from price history alone.
-          Downside is the loss that only one week in twenty should exceed.
-        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          <p className="text-xs text-groww-text-secondary leading-relaxed">
+            On days the model flagged, a fall of {fallSize} or more followed{' '}
+            <span className="font-bold text-groww-text-primary">{percent(model.rate_when_elevated)}</span> of the time,
+            against {percent(model.rate_otherwise)} otherwise.
+          </p>
+          {model.sources && (
+            <div id="source-comparison" className="rounded-xl bg-groww-bg-primary px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Accuracy by data used (AUC)</p>
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {Object.entries(model.sources.auc).map(([label, score]) => (
+                  <li key={label} className="flex items-center gap-2 text-[11px]">
+                    <span className="min-w-0 flex-1 truncate text-groww-text-secondary" title={label}>{label}</span>
+                    <span className="w-16 h-1.5 rounded-full bg-white overflow-hidden" aria-hidden>
+                      <span className="block h-full rounded-full bg-groww-green" style={{ width: `${Math.max(0, (score.auc - 0.4) / 0.3) * 100}%` }} />
+                    </span>
+                    <span className="w-9 text-right font-bold text-groww-text-primary tabular-nums">{score.auc.toFixed(3)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] text-groww-text-muted leading-relaxed">
+                {model.sources.gains.filter((gain) => gain.clear).length > 0
+                  ? `Clearly better than ${model.sources.gains.filter((gain) => gain.clear).map((gain) => gain.from).join(' and ')}.`
+                  : 'No source is clearly better than another.'}{' '}
+                Other differences are inside the 95% interval, so they are not claimed.
+              </p>
+            </div>
+          )}
+          <p className="text-[11px] text-groww-text-muted">
+            {model.name} · tested {model.tested_on.replace(' to ', ' – ')} · downside is the loss one week in twenty should exceed.
+          </p>
+        </div>
       )}
     </div>
   )
@@ -700,8 +721,8 @@ const NotificationBell: React.FC = () => {
                 found.
               </p>
             )}
-            {tab === 'alerts' && (
-              <ul>
+            {tab === 'alerts' && alerts.length > 0 && (
+              <ul className="flex flex-col gap-2.5 p-3 bg-groww-bg-primary">
                 {alerts.map((alert) => (
                   <AlertItem
                     key={alert.id}

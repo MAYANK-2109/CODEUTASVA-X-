@@ -1,0 +1,165 @@
+{
+ "evaluated_on": "2026-10-04",
+ "questions": 60,
+ "rule": "Correct only if the route names exactly the event types the question asks about",
+ "rules": {
+  "questions": 60,
+  "correct": 51,
+  "accuracy": 0.85,
+  "unanswered": 0,
+  "by_kind": {
+   "one event": {
+    "questions": 40,
+    "correct": 33
+   },
+   "general": {
+    "questions": 12,
+    "correct": 12
+   },
+   "two events": {
+    "questions": 8,
+    "correct": 6
+   }
+  },
+  "misses": [
+   {
+    "question": "Mumbai is waterlogged after record rainfall, which of my holdings suffer?",
+    "expected": [
+     "flood"
+    ],
+    "got": []
+   },
+   {
+    "question": "Brent is surging after OPEC cut output, am I exposed?",
+    "expected": [
+     "oil_up"
+    ],
+    "got": [
+     "oil_up",
+     "oil_down"
+    ]
+   },
+   {
+    "question": "Oil prices are climbing fast because of supply fears. Which holdings lose?",
+    "expected": [
+     "oil_up"
+    ],
+    "got": []
+   },
+   {
+    "question": "Crude oil has crashed below $60. Who gains and loses in my portfolio?",
+    "expected": [
+     "oil_down"
+    ],
+    "got": [
+     "oil_down",
+     "market_shock"
+    ]
+   },
+   {
+    "question": "The central bank is tightening policy faster than expected. My risk?",
+    "expected": [
+     "rate_hike"
+    ],
+    "got": []
+   },
+   {
+    "question": "The central bank lowered rates today. Should I change anything?",
+    "expected": [
+     "rate_cut"
+    ],
+    "got": []
+   },
+   {
+    "question": "The INR is sliding fast this week, how does that hit my portfolio?",
+    "expected": [
+     "currency_weak"
+    ],
+    "got": []
+   },
+   {
+    "question": "Floods in Mumbai while global markets are selling off, how bad?",
+    "expected": [
+     "flood",
+     "market_shock"
+    ],
+    "got": [
+     "flood"
+    ]
+   },
+   {
+    "question": "The rupee is depreciating and crude is getting costlier. What should I do?",
+    "expected": [
+     "currency_weak",
+     "oil_up"
+    ],
+    "got": [
+     "currency_weak"
+    ]
+   }
+  ]
+ },
+ "llm": {
+  "questions": 60,
+  "correct": 56,
+  "accuracy": 0.933,
+  "unanswered": 0,
+  "by_kind": {
+   "one event": {
+    "questions": 40,
+    "correct": 36
+   },
+   "general": {
+    "questions": 12,
+    "correct": 12
+   },
+   "two events": {
+    "questions": 8,
+    "correct": 8
+   }
+  },
+  "misses": [
+   {
+    "question": "IMD says a severe storm will make landfall near Odisha on Friday. Am I exposed?",
+    "expected": [
+     "cyclone"
+    ],
+    "got": [
+     "cyclone",
+     "flood"
+    ]
+   },
+   {
+    "question": "War has broken out in the Middle East, how bad is it for me?",
+    "expected": [
+     "geopolitical"
+    ],
+    "got": [
+     "geopolitical",
+     "oil_up"
+    ]
+   },
+   {
+    "question": "A missile attack on a Gulf oil port was just reported. Should I hedge?",
+    "expected": [
+     "geopolitical"
+    ],
+    "got": [
+     "geopolitical",
+     "oil_up"
+    ]
+   },
+   {
+    "question": "A new pandemic lockdown is announced. What happens to my portfolio?",
+    "expected": [
+     "market_shock"
+    ],
+    "got": [
+     "market_shock",
+     "geopolitical"
+    ]
+   }
+  ],
+  "model": "gemini-flash-lite-latest"
+ }
+}

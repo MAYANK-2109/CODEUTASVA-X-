@@ -64,6 +64,8 @@ def offline(monkeypatch):
     monkeypatch.setattr(nodes, "get_cross_assets", lambda: None)
     # Whatever the real vector database is doing, offline tests search locally.
     monkeypatch.setitem(vector_store._state, "ready", False)
+    monkeypatch.setattr(vector_store, "_recent_news", type(vector_store._recent_news)(maxlen=50))
+    monkeypatch.setattr(vector_store, "_indexed_news", set())
 
     def use(closes):
         monkeypatch.setattr(nodes, "get_history", lambda tickers: (closes, "live" if closes is not None else "unavailable"))
@@ -181,7 +183,7 @@ def test_holdings_left_out_are_reported(offline):
 def test_general_question_reports_risk_without_inventing_a_scenario(offline):
     offline(synthetic_closes())
     answer = answer_for("Is my portfolio risky right now?", HOLDING)
-    assert "no comparable past events" in answer["text"].lower()
+    assert "names no market event" in answer["text"] and "no event forecast" in answer["text"]
     assert any(e["id"].startswith("R") for e in answer["evidence"])
     assert not any(e["id"].startswith("H") for e in answer["evidence"])
 
@@ -246,7 +248,7 @@ def test_decision_states_the_rule_and_the_comparison_behind_it(offline):
 
     offline(synthetic_closes())
     general = answer_for("Is my portfolio risky right now?", HOLDING)["decision"]
-    assert general["action"] == "monitor" and "No comparable past events" in general["comparison"]
+    assert general["action"] == "monitor" and "names no market event" in general["comparison"]
 
     offline(None)   # no prices: nothing to decide, and the trail still has all seven steps
     blind = answer_for("What does a cyclone do to my portfolio?", HOLDING)
@@ -255,7 +257,7 @@ def test_decision_states_the_rule_and_the_comparison_behind_it(offline):
 
 def test_trail_names_the_model_when_its_wording_is_used(offline, gemini):
     offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
-    plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
+    plan = gemini_reply('{"event_types": ["cyclone"], "news_query": "cyclone coast"}')
     text = "**Bottom line:** a hedge is recommended [G1].\n- Forecast for your holdings: Alpha Refining falls [R7]."
     gemini([plan, gemini_reply(text)])
     trail = {step["agent"]: step for step in answer_for("Big storm coming?", HOLDING)["trail"]}
@@ -388,12 +390,12 @@ def test_gemini_text_reply_and_key_stays_out_of_the_url(gemini):
 
 
 def test_gemini_structured_reply_uses_converted_schema(gemini):
-    requests = gemini([gemini_reply('{"event_type": "cyclone", "news_query": "cyclone gujarat"}')])
+    requests = gemini([gemini_reply('{"event_types": ["cyclone"], "news_query": "cyclone gujarat"}')])
     result = llm.complete("system", "user", nodes.PLAN_SCHEMA)
-    assert result == {"event_type": "cyclone", "news_query": "cyclone gujarat"}
+    assert result == {"event_types": ["cyclone"], "news_query": "cyclone gujarat"}
     schema = requests[0]["body"]["generationConfig"]["responseSchema"]
     assert schema["type"] == "OBJECT" and "additionalProperties" not in schema
-    assert schema["properties"]["event_type"]["type"] == "STRING"
+    assert schema["properties"]["event_types"]["type"] == "ARRAY"
 
 
 def test_gemini_failures_return_none(gemini):
@@ -416,7 +418,7 @@ def test_gemini_falls_back_to_the_next_model(gemini):
 
 def test_pipeline_uses_llm_plan_and_grounded_llm_wording(offline, gemini):
     offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
-    plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
+    plan = gemini_reply('{"event_types": ["cyclone"], "news_query": "cyclone coast"}')
     monkeypatch_text = ("**Bottom line:** a hedge is recommended [G1].\n"
                         "- Forecast for your holdings: Alpha Refining is expected to fall [R7].")
     gemini([plan, gemini_reply(monkeypatch_text)])
@@ -428,7 +430,7 @@ def test_pipeline_uses_llm_plan_and_grounded_llm_wording(offline, gemini):
 
 def test_llm_wording_that_leaves_out_the_forecast_is_not_used(offline, gemini):
     offline(synthetic_closes(event_drop=-0.12, market_drop=-0.03))
-    plan = gemini_reply('{"event_type": "cyclone", "news_query": "cyclone coast"}')
+    plan = gemini_reply('{"event_types": ["cyclone"], "news_query": "cyclone coast"}')
     gemini([plan, gemini_reply("**Bottom line:** a hedge is recommended [G1].")])
     answer = answer_for("Big storm coming, what should I do with my shares?", HOLDING)
     assert answer["writer"] == "template"
@@ -774,3 +776,62 @@ def test_a_price_download_that_never_answers_is_abandoned(monkeypatch, tmp_path)
         assert market.get_macro() == ([], None)
     finally:
         release.set()
+
+
+# --------------------------------------------------------------------------- questions with no event, or several
+
+def test_a_question_naming_no_event_is_not_matched_to_past_events(offline, pinecone_ready):
+    """Shared words ("steel", "price") used to pull in unrelated events and a forecast built on them."""
+    offline(synthetic_closes())
+    index = pinecone_ready(FakeIndex([FakeHit("EV07", 0.80)]))
+    answer = answer_for("What exactly will the Tata Steel share price be on 31 December?", HOLDING)
+    assert not any(call["namespace"] == vector_store.EVENTS_NAMESPACE for call in index.calls)
+    assert not any(e["id"].startswith("H") for e in answer["evidence"])
+    assert answer["forecast"] is None
+
+
+def test_two_events_in_one_question_are_both_analysed_and_the_pooling_is_stated(offline):
+    offline(synthetic_closes())
+    answer = answer_for("If crude oil spikes 15% and a cyclone hits Gujarat, what do I lose?", HOLDING)
+    kinds = {e["claim"].split(" (")[0] for e in answer["evidence"] if e["id"].startswith("H")}
+    events = {e["title"]: e["type"] for e in load_events()}
+    assert {events[k] for k in kinds if k in events} == {"oil_up", "cyclone"}
+    gaps = " ".join(answer["gaps"])
+    assert "cyclone or severe storm and crude oil price spike" in gaps and "not added together" in gaps
+    assert "states a size (15%)" in gaps and "not scaled" in gaps
+
+
+def test_a_third_event_is_reported_as_left_out(offline):
+    offline(synthetic_closes())
+    answer = answer_for("Oil prices surge, a cyclone makes landfall and the RBI hikes rates: what now?", HOLDING)
+    assert any("interest rate hike, which is not analysed" in gap for gap in answer["gaps"])
+
+
+def test_rules_find_every_event_named():
+    assert nodes.classify_events("Rate hike plus a weak rupee, how do I hedge?") == ["rate_hike", "currency_weak"]
+    assert nodes.classify_events("How diversified am I?") == []
+
+
+def test_routing_accuracy_is_scored_by_exact_match_and_lists_the_misses():
+    from app.agents import evaluate
+
+    questions = [{"question": "A cyclone is coming", "expected": ["cyclone"], "kind": "one event"},
+                 {"question": "How diversified am I?", "expected": [], "kind": "general"},
+                 {"question": "Oil spikes and a cyclone lands", "expected": ["oil_up", "cyclone"], "kind": "two events"}]
+    result = evaluate.score(questions, nodes.classify_events)
+    assert (result["questions"], result["correct"], result["accuracy"]) == (3, 3, 1.0)
+    half = evaluate.score(questions, lambda question: ["cyclone"])
+    assert half["correct"] == 1 and len(half["misses"]) == 2
+    assert evaluate.score(questions, lambda question: None)["unanswered"] == 3
+
+
+def test_the_labelled_question_set_uses_only_known_event_types():
+    rows = json.loads((evaluate_questions()).read_text())["questions"]
+    assert len(rows) >= 60
+    assert all(set(row["expected"]) <= set(nodes.EVENT_TYPES) for row in rows)
+
+
+def evaluate_questions():
+    from app.agents import evaluate
+
+    return evaluate.QUESTIONS_FILE

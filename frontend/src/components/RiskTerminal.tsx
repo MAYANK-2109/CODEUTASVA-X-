@@ -288,20 +288,25 @@ export const RiskAlertList: React.FC<{ className?: string }> = ({ className = ''
           {live.slice(0, MAX_ALERTS).map((alert) => {
             const SeverityIcon = SEVERITY[alert.severity].Icon
             return (
-              <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
-                <span
-                  className={`mt-0.5 shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold ${SEVERITY[alert.severity].chip}`}
-                >
-                  <SeverityIcon className="w-2.5 h-2.5 shrink-0" />
-                  <span>{SEVERITY[alert.severity].label}</span>
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
-                  <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">
-                    <span className="font-semibold text-groww-text-primary">Action: </span>
-                    {alert.solution?.headline ?? alert.recommendation}
-                  </p>
-                </div>
+              <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0">
+                <button onClick={openAlerts} className="w-full flex items-start gap-3 text-left rounded-xl hover:bg-groww-bg-primary transition-colors -mx-1.5 px-1.5 py-1">
+                  <span
+                    className={`mt-0.5 shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${SEVERITY[alert.severity].chip}`}
+                    title={SEVERITY[alert.severity].label}
+                  >
+                    <SeverityIcon className="w-3 h-3 shrink-0" />
+                    <span className="sr-only">{SEVERITY[alert.severity].label}</span>
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</span>
+                    <span className="mt-0.5 flex gap-1.5 text-xs text-groww-text-secondary leading-snug">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-[3px] text-groww-green" aria-hidden>
+                        <path d="M5 12h14M13 6l6 6-6 6" />
+                      </svg>
+                      <span className="line-clamp-1">{alert.solution?.headline ?? alert.recommendation}</span>
+                    </span>
+                  </span>
+                </button>
               </li>
             )
           })}
@@ -341,6 +346,8 @@ export const RiskStreamsCard: React.FC<{ backendUrl: string; className?: string 
   }, [loadStreams])
 
   const feeds = streams.status === 'ready' ? streams.data : null
+  // One line per feed; its detail opens on click.
+  const [openStream, setOpenStream] = useState<string | null>(null)
 
   return (
     <div id="risk-streams" className={`rounded-2xl sm:rounded-3xl bg-white border border-groww-border-light shadow-card p-5 sm:p-6 transition-all duration-200 ${className}`}>
@@ -360,26 +367,36 @@ export const RiskStreamsCard: React.FC<{ backendUrl: string; className?: string 
           {streams.status === 'error' ? streams.message : 'Checking each feed…'}
         </p>
       ) : (
-        <ul className="mt-3.5 flex flex-col gap-2.5">
+        <ul className="mt-3 flex flex-col divide-y divide-groww-border-light">
           {feeds.streams.map((stream) => {
             const status = STATUS[stream.status]
             const StatusIcon = status.Icon
-            const when = ago(stream.checked_at)
+            const open = openStream === stream.key
             return (
-              <li key={stream.key} className="flex items-start gap-2.5 text-xs">
-                <span className={`w-[80px] shrink-0 whitespace-nowrap font-semibold inline-flex items-center gap-1.5 ${status.className}`}>
-                  <StatusIcon className="w-2.5 h-2.5 shrink-0" />
-                  <span>{status.label}</span>
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="font-semibold text-groww-text-primary">{stream.label}</span>{' '}
-                  <span className="text-groww-text-muted">{stream.source}</span>
-                  <span className="block text-groww-text-secondary leading-snug">{stream.detail}</span>
-                </span>
-                <span className="shrink-0 text-right text-[11px] text-groww-text-muted tabular-nums">
-                  {when}
-                  {stream.latency_ms !== null && <span className="block">{stream.latency_ms} ms</span>}
-                </span>
+              <li key={stream.key} className="stream-row">
+                <button
+                  onClick={() => setOpenStream(open ? null : stream.key)}
+                  aria-expanded={open}
+                  className="w-full flex items-center gap-2.5 py-2.5 text-left text-[13px] hover:bg-groww-bg-primary rounded-lg px-1.5 -mx-1.5 transition-colors"
+                >
+                  <span className={`shrink-0 inline-flex items-center ${status.className}`} title={status.label}>
+                    <StatusIcon className="w-3 h-3" />
+                    <span className="sr-only">{status.label}</span>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-semibold text-groww-text-primary">{stream.label}</span>{' '}
+                    <span className="text-xs text-groww-text-muted">{stream.source}</span>
+                  </span>
+                  <span className={`shrink-0 text-xs font-semibold tabular-nums ${stream.status === 'live' ? 'text-groww-text-secondary' : status.className}`}>
+                    {stream.status !== 'live' ? status.label : stream.latency_ms !== null ? `${stream.latency_ms} ms` : 'Live'}
+                  </span>
+                </button>
+                {open && (
+                  <p className="stream-detail pb-2.5 pl-6 pr-1 text-xs text-groww-text-secondary leading-relaxed">
+                    {stream.detail}
+                    {ago(stream.checked_at) && <span className="text-groww-text-muted"> · checked {ago(stream.checked_at)}</span>}
+                  </p>
+                )}
               </li>
             )
           })}

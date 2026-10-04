@@ -11,11 +11,15 @@ import hashlib
 import os
 import threading
 import time
+from collections import deque
 
-from app.tools.events import find_similar_events, load_events
+from app.tools.events import _cosine, find_similar_events, load_events, tokenize
 
 EVENTS_NAMESPACE = "events"
 NEWS_NAMESPACE = "news"
+WEATHER_NAMESPACE = "weather"
+TIMINGS_KEPT = 200          # the most recent calls, for the median and 95th percentile
+RECENT_NEWS_KEPT = 2000     # headlines kept in memory for the local search fallback
 TEXT_FIELD = "chunk_text"
 UPSERT_BATCH = 90
 REQUEST_TIMEOUT_SECONDS = 6.0
@@ -25,8 +29,27 @@ LOCAL = "local"
 
 _lock = threading.Lock()
 _indexed_news: set[str] = set()
-_state: dict = {"index": None, "ready": False, "error": None, "events_indexed": 0,
-                "news_indexed": 0, "last_news_upsert_ms": None, "last_search_ms": None}
+_recent_news: deque = deque(maxlen=RECENT_NEWS_KEPT)
+_unsent: list[dict] = []
+_unsent_lock = threading.Lock()   # separate from _lock, which is held while the index connects
+_timings: dict[str, deque] = {"index": deque(maxlen=TIMINGS_KEPT), "search": deque(maxlen=TIMINGS_KEPT)}
+_state: dict = {"index": None, "ready": False, "error": None, "events_indexed": 0, "news_indexed": 0,
+                "weather_indexed": 0, "last_news_upsert_ms": None, "last_search_ms": None}
+
+
+def _timed(kind: str, started: float) -> int:
+    ms = round((time.perf_counter() - started) * 1000)
+    _timings[kind].append(ms)
+    return ms
+
+
+def percentiles(values) -> dict | None:
+    """Median and 95th percentile of the timings, with how many there are."""
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    pick = lambda share: ordered[min(len(ordered) - 1, int(share * len(ordered)))]  # noqa: E731
+    return {"p50": pick(0.50), "p95": pick(0.95), "n": len(ordered)}
 
 
 def enabled() -> bool:
@@ -108,7 +131,7 @@ def search_events(query: str, event_type: str | None = None, limit: int = 6) -> 
             fields=["title"],
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
-        _state["last_search_ms"] = round((time.perf_counter() - started) * 1000)
+        _state["last_search_ms"] = _timed("search", started)
         hits = [
             {**by_id[hit.id], "similarity": round(float(hit.score), 2)}
             for hit in response.result.hits
@@ -121,20 +144,35 @@ def search_events(query: str, event_type: str | None = None, limit: int = 6) -> 
     return (hits, PINECONE) if hits else (local, LOCAL)
 
 
-def _upsert_news(items: list[dict]) -> None:
-    records = {}
+def _news_id(item: dict) -> str:
+    return hashlib.sha1((item.get("url") or item["title"]).encode()).hexdigest()
+
+
+def new_items(items: list[dict]) -> list[dict]:
+    """The headlines not indexed yet, each once."""
+    fresh = {}
     for item in items:
-        record_id = hashlib.sha1((item.get("url") or item["title"]).encode()).hexdigest()
-        if record_id not in _indexed_news:  # a headline seen before is already in the index
-            records[record_id] = {
-                "_id": record_id,
-                TEXT_FIELD: item["title"],
-                "source": item.get("source") or "",
-                "published_at": item.get("published_at") or "",
-            }
-    records = list(records.values())
-    if not records:
-        return
+        if item.get("title") and _news_id(item) not in _indexed_news:
+            fresh.setdefault(_news_id(item), item)
+    return list(fresh.values())
+
+
+def upsert_news(items: list[dict]) -> int | None:
+    """Embed and index the headlines that are new. Returns the milliseconds it
+    took, or None when there was nothing new or the index is not reachable."""
+    fresh = new_items(items)
+    if not fresh:
+        return None
+    _recent_news.extend(fresh)
+    records = [{"_id": _news_id(item), TEXT_FIELD: item["title"], "source": item.get("source") or "",
+                "published_at": item.get("published_at") or "", "url": item.get("url") or ""} for item in fresh]
+    _indexed_news.update(record["_id"] for record in records)
+    with _unsent_lock:
+        records = _unsent + records      # anything that arrived before the index was ready goes now
+        _unsent.clear()
+        if not _state["ready"]:
+            _unsent.extend(records[-RECENT_NEWS_KEPT:])
+            return None
     try:
         started = time.perf_counter()
         for start in range(0, len(records), UPSERT_BATCH):
@@ -143,17 +181,68 @@ def _upsert_news(items: list[dict]) -> None:
                 records=records[start:start + UPSERT_BATCH],
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
-        _state["last_news_upsert_ms"] = round((time.perf_counter() - started) * 1000)
+        _state["last_news_upsert_ms"] = _timed("index", started)
         _state["news_indexed"] += len(records)
-        _indexed_news.update(record["_id"] for record in records)
+        return _state["last_news_upsert_ms"]
     except Exception as exc:
         _state["error"] = f"{type(exc).__name__}: {exc}"
+        return None
 
 
 def index_news(items: list[dict]) -> None:
     """Embed and index headlines without delaying the caller."""
-    if _state["ready"] and items:
-        threading.Thread(target=_upsert_news, args=(items,), daemon=True).start()
+    if items:
+        threading.Thread(target=upsert_news, args=(items,), daemon=True).start()
+
+
+def upsert_weather(records: list[dict]) -> int | None:
+    """Index one text record per site and day of the weather outlook. Returns the milliseconds taken."""
+    if not _state["ready"] or not records:
+        return None
+    try:
+        started = time.perf_counter()
+        _state["index"].upsert_records(namespace=WEATHER_NAMESPACE, records=records, timeout=REQUEST_TIMEOUT_SECONDS)
+        _state["weather_indexed"] = len(records)
+        return _timed("index", started)
+    except Exception as exc:
+        _state["error"] = f"{type(exc).__name__}: {exc}"
+        return None
+
+
+def _local_news(query: str, limit: int) -> list[dict]:
+    """Headlines in memory that share words with the query, closest first."""
+    wanted = {term: 1.0 for term in tokenize(query)}
+    ranked = []
+    for item in _recent_news:
+        similarity = _cosine(wanted, {term: 1.0 for term in tokenize(item["title"])})
+        if similarity > 0.15:
+            ranked.append({**item, "similarity": round(similarity, 2)})
+    ranked.sort(key=lambda item: item["similarity"], reverse=True)
+    return ranked[:limit]
+
+
+def search_news(query: str, limit: int = 6) -> tuple[list[dict], str]:
+    """Indexed headlines closest in meaning to the query, and which backend ranked them."""
+    if not _state["ready"]:
+        return _local_news(query, limit), LOCAL
+    try:
+        started = time.perf_counter()
+        response = _state["index"].search(
+            namespace=NEWS_NAMESPACE, top_k=limit, inputs={"text": query},
+            fields=[TEXT_FIELD, "source", "published_at", "url"], timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        _state["last_search_ms"] = _timed("search", started)
+        hits = []
+        for hit in response.result.hits:
+            fields = hit.fields or {}
+            if fields.get(TEXT_FIELD):
+                hits.append({"title": fields[TEXT_FIELD], "source": fields.get("source") or None,
+                             "published_at": fields.get("published_at") or None, "url": fields.get("url") or None,
+                             "similarity": round(float(hit.score), 2)})
+        return hits, PINECONE
+    except Exception as exc:
+        _state["error"] = f"{type(exc).__name__}: {exc}"
+        return _local_news(query, limit), LOCAL
 
 
 def status() -> dict:
@@ -162,8 +251,10 @@ def status() -> dict:
         "configured": enabled(),
         "index": _settings()["name"] if enabled() else None,
         "embedding_model": _settings()["model"] if enabled() else None,
-        **{k: _state[k] for k in ("events_indexed", "news_indexed", "last_news_upsert_ms",
+        **{k: _state[k] for k in ("events_indexed", "news_indexed", "weather_indexed", "last_news_upsert_ms",
                                   "last_search_ms", "error")},
+        "index_ms": percentiles(_timings["index"]),
+        "search_ms": percentiles(_timings["search"]),
     }
 
 

@@ -167,7 +167,9 @@ def score_many(texts: list[str]) -> list[float]:
             fresh = [text for text in dict.fromkeys(texts) if text not in _scores]
             if fresh:
                 if len(_scores) + len(fresh) > SCORE_CACHE_SIZE:
+                    # Emptying the cache also drops this batch's earlier scores, so all of it is scored again.
                     _scores.clear()
+                    fresh = list(dict.fromkeys(texts))
                 _scores.update(zip(fresh, _finbert_scores(fresh)))
             return [_scores[text] for text in texts]
         except Exception as exc:

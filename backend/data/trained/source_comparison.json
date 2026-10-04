@@ -1,0 +1,92 @@
+{
+  "evaluated_on": "2026-10-04",
+  "question": "Will the stock lose 5% or more over the next 5 sessions?",
+  "measure": "AUC on the test years: 0.5 is a coin toss, 1.0 is perfect",
+  "data": "56,964 stock-days of 63 NSE stocks (live); models fitted on 2015-03-02 to 2022-12-30",
+  "test_period": "2023-01-02 to 2026-09-25",
+  "news": "Weekly FinBERT mood of Google News headlines for \"Sensex Nifty\"; each day uses the last full week before it",
+  "interval_method": "400 re-draws of whole trading days",
+  "auc": {
+    "news sentiment alone": {
+      "auc": 0.474,
+      "interval_95": [
+        0.447,
+        0.508
+      ]
+    },
+    "60-day volatility alone": {
+      "auc": 0.635,
+      "interval_95": [
+        0.62,
+        0.65
+      ]
+    },
+    "price history": {
+      "auc": 0.644,
+      "interval_95": [
+        0.628,
+        0.656
+      ]
+    },
+    "price, macro, sector and weather": {
+      "auc": 0.646,
+      "interval_95": [
+        0.63,
+        0.662
+      ]
+    },
+    "all of those plus news sentiment": {
+      "auc": 0.643,
+      "interval_95": [
+        0.625,
+        0.66
+      ]
+    }
+  },
+  "gains": [
+    {
+      "from": "news sentiment alone",
+      "to": "price, macro, sector and weather",
+      "auc_gain": 0.172,
+      "interval_95": [
+        0.138,
+        0.201
+      ],
+      "clear": true,
+      "share_of_draws_better": 1.0
+    },
+    {
+      "from": "60-day volatility alone",
+      "to": "price, macro, sector and weather",
+      "auc_gain": 0.011,
+      "interval_95": [
+        -0.003,
+        0.026
+      ],
+      "clear": false,
+      "share_of_draws_better": 0.932
+    },
+    {
+      "from": "price history",
+      "to": "price, macro, sector and weather",
+      "auc_gain": 0.003,
+      "interval_95": [
+        -0.007,
+        0.013
+      ],
+      "clear": false,
+      "share_of_draws_better": 0.688
+    },
+    {
+      "from": "price, macro, sector and weather",
+      "to": "all of those plus news sentiment",
+      "auc_gain": -0.003,
+      "interval_95": [
+        -0.008,
+        0.002
+      ],
+      "clear": false,
+      "share_of_draws_better": 0.068
+    }
+  ]
+}

@@ -211,3 +211,38 @@ def test_sector_classification_from_yahoo_names():
     assert news.news_topic({"ticker": "TATASTEEL.NS", "sector": "Metals"}) == "Steel"
     assert news.news_topic({"ticker": "HINDALCO.NS", "sector": "Metals"}) == "Metals"
     assert news.news_topic({"ticker": "X.NS", "sector": "Other"}) is None
+
+
+# --------------------------------------------------------------------------- bad input
+
+def test_holdings_with_nonsense_quantities_are_left_out():
+    from app.tools.market import normalise_holdings
+
+    rows = [
+        {"symbol": "TATASTEEL", "units": "lots", "buy_price": 140},      # not a number
+        {"symbol": "TATASTEEL", "units": 1e15, "buy_price": 140},        # absurd size
+        {"symbol": "TATASTEEL", "units": float("nan"), "buy_price": 140},
+        {"symbol": "TATASTEEL", "units": -5, "buy_price": 140},
+        "not a row",
+        {"symbol": "INFY", "units": "12", "buy_price": "cheap"},         # usable quantity, unusable price
+    ]
+    holdings, source = normalise_holdings(rows)
+    assert source == "user"
+    assert [(h["ticker"], h["units"], h["buy_price"]) for h in holdings] == [("INFY.NS", 12.0, None)]
+
+
+def test_an_unhandled_error_is_a_json_500_with_cors_headers(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import terminal
+    from app.main import app
+
+    def boom(holdings):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(terminal, "_overview", boom)
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/api/terminal/overview", json={"holdings": []}, headers={"Origin": "https://codeutasva-x.vercel.app"})
+    assert response.status_code == 500
+    assert response.json() == {"detail": "The server hit an error handling this request."}
+    assert response.headers["access-control-allow-origin"] == "https://codeutasva-x.vercel.app"

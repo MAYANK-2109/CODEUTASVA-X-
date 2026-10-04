@@ -1,3 +1,4 @@
+import logging
 import os
 
 from app.tools import memory
@@ -8,12 +9,43 @@ from dotenv import load_dotenv  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
 
 from app.api import router  # noqa: E402
 
 load_dotenv()
 
 app = FastAPI(title="Financial Intelligence Terminal API")
+
+
+class SafeErrors:
+    """Turn an unhandled error into a JSON 500. It sits inside the CORS layer, so
+    the browser gets a readable error instead of reporting a CORS failure."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.inner(scope, receive, send)
+        started = False
+
+        async def watch(message):
+            nonlocal started
+            started = started or message["type"] == "http.response.start"
+            await send(message)
+
+        try:
+            await self.inner(scope, receive, watch)
+        except Exception:
+            if started:  # the reply is already on its way; nothing can be put in its place
+                raise
+            logging.getLogger("uvicorn.error").exception("Unhandled error on %s", scope.get("path"))
+            reply = JSONResponse({"detail": "The server hit an error handling this request."}, status_code=500)
+            await reply(scope, receive, send)
+
+
+app.add_middleware(SafeErrors)  # added first, so every later layer (CORS, compression) wraps it
 
 origins = [
     "https://codeutasva-x.vercel.app",
@@ -63,6 +95,7 @@ import time  # noqa: E402
 
 import httpx  # noqa: E402
 
+from app.ingestion import stream  # noqa: E402
 from app.tools import gdelt, market, sentiment, vector_store  # noqa: E402
 
 KEEP_AWAKE_SECONDS = 600   # the free host stops a service after 15 minutes without a request
@@ -85,6 +118,7 @@ def start_background_work() -> None:
     vector_store.warm_up_in_background()
     gdelt.start_background_scan()
     market.warm_up_in_background()
+    stream.start_in_background()
     # Loading the sentiment model takes seconds; do it now, not inside the first request.
     threading.Thread(target=sentiment.backend, daemon=True, name="warm-sentiment").start()
     # Render sets RENDER_EXTERNAL_URL; KEEP_AWAKE_URL does the same job on another host.
