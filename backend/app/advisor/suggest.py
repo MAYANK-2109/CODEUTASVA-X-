@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from app.advisor import config
-from app.advisor.data import fundamentals
+from app.advisor.data import fundamentals, source_note
 from app.agents import llm
 from app.agents.nodes import _macro_flags, _numbers
 from app.broker.paper import UNKNOWN_LIQUIDITY_BPS, share_slippage_bps
@@ -496,7 +496,8 @@ def pick_stocks(state: dict, sector: str, tickers: list[str]) -> dict:
                                      if median_pe and candidate["fundamentals"]["pe"] else None)
     ranked = sorted(candidates.values(), key=lambda c: -c["composite"])
     return {"sector": sector, "considered": len(tickers), "sector_median_pe": median_pe,
-            "excluded": excluded, "stocks": ranked[:config.PICKS_PER_SECTOR]}
+            "excluded": excluded, "stocks": ranked[:config.PICKS_PER_SECTOR],
+            "fundamentals_note": source_note(facts)}
 
 
 # --------------------------------------------------------------------------- step 4: sizing and validation
@@ -763,6 +764,7 @@ def suggest(raw_holdings: list[dict] | None) -> dict:
             *([f'Left out for lack of a price: {", ".join(state["unpriced"])}.'] if state["unpriced"] else []),
             *([f'Left out for less than a year of prices: {", ".join(state["short_history"])}.'] if state["short_history"] else []),
             *(["Macro history was unavailable, so macro sensitivities and macro fit are missing."] if factors is None else []),
+            *dict.fromkeys(group["fundamentals_note"] for group in picks if group.get("fundamentals_note")),
         ],
         "regime": flags,
         "diagnosis": diagnosis, "sectors": ranking, "picks": picks, "sizing": sizing,

@@ -214,3 +214,38 @@ def test_group_limit_and_floors_in_the_optimiser():
                           floors, group, 0.10)
     assert weights.sum() == pytest.approx(1, abs=1e-6) and weights[group].sum() <= 0.10 + 1e-6
     assert (weights >= floors - 1e-9).all() and (weights <= caps + 1e-9).all()
+
+
+# --------------------------------------------------------------------------- fundamentals fallback
+
+def test_saved_snapshot_stands_in_when_the_live_source_gives_nothing(monkeypatch, tmp_path):
+    """On a host Yahoo refuses, every stock used to be excluded for unknown size."""
+    from app.advisor import data
+
+    monkeypatch.setattr(data, "CACHE_FILE", tmp_path / "fundamentals.json")
+    monkeypatch.setattr(data, "_cache", {})
+    monkeypatch.setattr(data, "_state", {"blocked_until": 0.0, "snapshot_used": False})
+    monkeypatch.setattr(data, "_snapshot", {"saved_on": "2026-10-04",
+                                            "tickers": {"CIPLA.NS": {"market_cap": 1.2e12, "average_volume": 2e6}}})
+    calls = []
+    monkeypatch.setattr(data, "_lookup", lambda ticker: calls.append(ticker))   # the source answers nothing
+
+    facts = data.fundamentals(["CIPLA.NS", "UNKNOWN.NS"])
+    assert facts == {"CIPLA.NS": {"market_cap": 1.2e12, "average_volume": 2e6, "snapshot": True}}
+    assert "snapshot saved on 2026-10-04" in data.source_note(facts)
+
+    # Having been refused once, it does not wait on the source again straight away.
+    data.fundamentals(["CIPLA.NS"])
+    assert calls == ["CIPLA.NS", "UNKNOWN.NS"]
+
+
+def test_live_fundamentals_are_preferred_and_carry_no_note(monkeypatch, tmp_path):
+    import time
+
+    from app.advisor import data
+
+    monkeypatch.setattr(data, "CACHE_FILE", tmp_path / "fundamentals.json")
+    monkeypatch.setattr(data, "_cache", {"CIPLA.NS": {"market_cap": 1.3e12, "average_volume": 3e6, "fetched_at": time.time()}})
+    monkeypatch.setattr(data, "_snapshot", {"saved_on": "2026-10-04", "tickers": {"CIPLA.NS": {"market_cap": 1.0}}})
+    facts = data.fundamentals(["CIPLA.NS"])
+    assert facts["CIPLA.NS"]["market_cap"] == 1.3e12 and data.source_note(facts) is None

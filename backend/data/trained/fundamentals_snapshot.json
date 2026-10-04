@@ -1,0 +1,430 @@
+{
+ "saved_on": "2026-10-04",
+ "source": "Yahoo Finance",
+ "tickers": {
+  "ADANIGREEN.NS": {
+   "market_cap": 2101961555968.0,
+   "average_volume": 1972952.0,
+   "roe": null,
+   "margin": 0.13095,
+   "debt_to_equity": 346.548,
+   "pe": 121.998085
+  },
+  "ADANIPORTS.NS": {
+   "market_cap": 4003820208128.0,
+   "average_volume": 2123397.0,
+   "roe": null,
+   "margin": 0.32431,
+   "debt_to_equity": 64.051,
+   "pe": 29.675547
+  },
+  "ADANIPOWER.NS": {
+   "market_cap": 3783850196992.0,
+   "average_volume": 22004740.0,
+   "roe": null,
+   "margin": 0.24148001,
+   "debt_to_equity": 82.332,
+   "pe": 26.514866
+  },
+  "AXISBANK.NS": {
+   "market_cap": 3789671890944.0,
+   "average_volume": 6018518.0,
+   "roe": 0.13352999,
+   "margin": 0.36031,
+   "debt_to_equity": null,
+   "pe": 13.698368
+  },
+  "BAJAJ-AUTO.NS": {
+   "market_cap": 2760404631552.0,
+   "average_volume": 335683.0,
+   "roe": null,
+   "margin": 0.16251,
+   "debt_to_equity": 56.352,
+   "pe": 23.866093
+  },
+  "BAJAJFINSV.NS": {
+   "market_cap": 2772584103936.0,
+   "average_volume": 1052432.0,
+   "roe": null,
+   "margin": 0.06471,
+   "debt_to_equity": 256.404,
+   "pe": 27.397215
+  },
+  "BAJFINANCE.NS": {
+   "market_cap": 5899291721728.0,
+   "average_volume": 7292822.0,
+   "roe": null,
+   "margin": 0.43495,
+   "debt_to_equity": 314.833,
+   "pe": 29.088959
+  },
+  "BPCL.NS": {
+   "market_cap": 1284339007488.0,
+   "average_volume": 5577637.0,
+   "roe": null,
+   "margin": 0.034679998,
+   "debt_to_equity": 54.332,
+   "pe": 7.4962597
+  },
+  "BRITANNIA.NS": {
+   "market_cap": 1150868652032.0,
+   "average_volume": 279938.0,
+   "roe": null,
+   "margin": 0.13376,
+   "debt_to_equity": 26.875,
+   "pe": 44.24893
+  },
+  "CIPLA.NS": {
+   "market_cap": 1085778100224.0,
+   "average_volume": 1036357.0,
+   "roe": null,
+   "margin": 0.12009,
+   "debt_to_equity": 1.778,
+   "pe": 32.26116
+  },
+  "COALINDIA.NS": {
+   "market_cap": 2590811095040.0,
+   "average_volume": 7906836.0,
+   "roe": null,
+   "margin": 0.18138,
+   "debt_to_equity": 11.629,
+   "pe": 8.31981
+  },
+  "DABUR.NS": {
+   "market_cap": 663903404032.0,
+   "average_volume": 2067899.0,
+   "roe": null,
+   "margin": 0.14551,
+   "debt_to_equity": 10.907,
+   "pe": 33.655575
+  },
+  "DIVISLAB.NS": {
+   "market_cap": 2455318822912.0,
+   "average_volume": 504172.0,
+   "roe": null,
+   "margin": 0.26046,
+   "debt_to_equity": 0.042,
+   "pe": 84.03598
+  },
+  "DRREDDY.NS": {
+   "market_cap": 1004750831616.0,
+   "average_volume": 2092881.0,
+   "roe": 0.088369995,
+   "margin": 0.09996,
+   "debt_to_equity": 18.605,
+   "pe": 30.398184
+  },
+  "EICHERMOT.NS": {
+   "market_cap": 1899690196992.0,
+   "average_volume": 468728.0,
+   "roe": null,
+   "margin": 0.23211999,
+   "debt_to_equity": 2.048,
+   "pe": 32.894424
+  },
+  "GAIL.NS": {
+   "market_cap": 1125785141248.0,
+   "average_volume": 8463131.0,
+   "roe": null,
+   "margin": 0.06698,
+   "debt_to_equity": 27.809,
+   "pe": 11.391883
+  },
+  "GRASIM.NS": {
+   "market_cap": 2009092980736.0,
+   "average_volume": 847682.0,
+   "roe": null,
+   "margin": 0.03093,
+   "debt_to_equity": 135.044,
+   "pe": 35.337627
+  },
+  "HCLTECH.NS": {
+   "market_cap": 3363538468864.0,
+   "average_volume": 2933070.0,
+   "roe": 0.24067,
+   "margin": 0.12966,
+   "debt_to_equity": 7.058,
+   "pe": 19.341839
+  },
+  "HDFCBANK.NS": {
+   "market_cap": 11119805595648.0,
+   "average_volume": 30322022.0,
+   "roe": 0.13838,
+   "margin": 0.26787,
+   "debt_to_equity": null,
+   "pe": 15.774278
+  },
+  "HDFCLIFE.NS": {
+   "market_cap": 1160308719616.0,
+   "average_volume": 3947746.0,
+   "roe": 0.10828,
+   "margin": 0.019,
+   "debt_to_equity": 15.885,
+   "pe": 58.510406
+  },
+  "HEROMOTOCO.NS": {
+   "market_cap": 1034329718784.0,
+   "average_volume": 638856.0,
+   "roe": null,
+   "margin": 0.10724,
+   "debt_to_equity": 3.57,
+   "pe": 19.011183
+  },
+  "HINDALCO.NS": {
+   "market_cap": 2090753589248.0,
+   "average_volume": 4303407.0,
+   "roe": null,
+   "margin": 0.05549,
+   "debt_to_equity": 72.598,
+   "pe": 12.770847
+  },
+  "HINDPETRO.NS": {
+   "market_cap": 734098751488.0,
+   "average_volume": 5464925.0,
+   "roe": null,
+   "margin": 0.00356,
+   "debt_to_equity": 85.369,
+   "pe": 43.837357
+  },
+  "HINDUNILVR.NS": {
+   "market_cap": 4313849528320.0,
+   "average_volume": 1550869.0,
+   "roe": null,
+   "margin": 0.22644,
+   "debt_to_equity": 3.016,
+   "pe": 40.818142
+  },
+  "ICICIBANK.NS": {
+   "market_cap": 9408024150016.0,
+   "average_volume": 10492400.0,
+   "roe": 0.16073999,
+   "margin": 0.27531,
+   "debt_to_equity": null,
+   "pe": 16.948143
+  },
+  "INDUSINDBK.NS": {
+   "market_cap": 690984452096.0,
+   "average_volume": 1978582.0,
+   "roe": null,
+   "margin": 0.076469995,
+   "debt_to_equity": null,
+   "pe": 52.352417
+  },
+  "INFY.NS": {
+   "market_cap": 4192105660416.0,
+   "average_volume": 10879010.0,
+   "roe": 0.32,
+   "margin": 0.16370001,
+   "debt_to_equity": 9.541,
+   "pe": 13.298214
+  },
+  "IOC.NS": {
+   "market_cap": 1854683480064.0,
+   "average_volume": 9700746.0,
+   "roe": null,
+   "margin": 0.0392,
+   "debt_to_equity": 58.446,
+   "pe": 5.3739767
+  },
+  "ITC.NS": {
+   "market_cap": 3206559301632.0,
+   "average_volume": 14205159.0,
+   "roe": null,
+   "margin": 0.25937998,
+   "debt_to_equity": 3.293,
+   "pe": 16.155302
+  },
+  "JSWSTEEL.NS": {
+   "market_cap": 3009726119936.0,
+   "average_volume": 1627882.0,
+   "roe": null,
+   "margin": 0.13065,
+   "debt_to_equity": 95.374,
+   "pe": 12.165762
+  },
+  "KOTAKBANK.NS": {
+   "market_cap": 4161696169984.0,
+   "average_volume": 14943140.0,
+   "roe": null,
+   "margin": 0.28467,
+   "debt_to_equity": null,
+   "pe": 20.487268
+  },
+  "LICI.NS": {
+   "market_cap": 4956900818944.0,
+   "average_volume": 9978741.0,
+   "roe": null,
+   "margin": 0.06515,
+   "debt_to_equity": 0.431,
+   "pe": 8.25121
+  },
+  "LT.NS": {
+   "market_cap": 5081623691264.0,
+   "average_volume": 1679549.0,
+   "roe": null,
+   "margin": 0.05588,
+   "debt_to_equity": 97.64,
+   "pe": 30.676079
+  },
+  "M&M.NS": {
+   "market_cap": 3434179985408.0,
+   "average_volume": 2213759.0,
+   "roe": null,
+   "margin": 0.08609,
+   "debt_to_equity": 125.278,
+   "pe": 17.391304
+  },
+  "MARUTI.NS": {
+   "market_cap": 3579787608064.0,
+   "average_volume": 390135.0,
+   "roe": null,
+   "margin": 0.07269,
+   "debt_to_equity": 0.096,
+   "pe": 25.0
+  },
+  "NESTLEIND.NS": {
+   "market_cap": 2521656721408.0,
+   "average_volume": 1765562.0,
+   "roe": null,
+   "margin": 0.15623,
+   "debt_to_equity": 8.621,
+   "pe": 66.212654
+  },
+  "NHPC.NS": {
+   "market_cap": 720731242496.0,
+   "average_volume": 11000319.0,
+   "roe": null,
+   "margin": 0.31094998,
+   "debt_to_equity": 113.111,
+   "pe": 26.282051
+  },
+  "NTPC.NS": {
+   "market_cap": 3055419654144.0,
+   "average_volume": 8775708.0,
+   "roe": null,
+   "margin": 0.14531,
+   "debt_to_equity": 128.345,
+   "pe": 9.633141
+  },
+  "OIL.NS": {
+   "market_cap": 722213863424.0,
+   "average_volume": 2856842.0,
+   "roe": null,
+   "margin": 0.21685,
+   "debt_to_equity": 58.741,
+   "pe": 8.643177
+  },
+  "ONGC.NS": {
+   "market_cap": 2797476773888.0,
+   "average_volume": 11792685.0,
+   "roe": null,
+   "margin": 0.06181,
+   "debt_to_equity": 42.548,
+   "pe": 6.426879
+  },
+  "POWERGRID.NS": {
+   "market_cap": 2367468863488.0,
+   "average_volume": 8964494.0,
+   "roe": null,
+   "margin": 0.33797002,
+   "debt_to_equity": 150.813,
+   "pe": 12.4718275
+  },
+  "RELIANCE.NS": {
+   "market_cap": 15801867304960.0,
+   "average_volume": 11836680.0,
+   "roe": null,
+   "margin": 0.066149995,
+   "debt_to_equity": 46.278,
+   "pe": 21.142494
+  },
+  "SBILIFE.NS": {
+   "market_cap": 1727462113280.0,
+   "average_volume": 1006762.0,
+   "roe": 0.13703,
+   "margin": 0.021389998,
+   "debt_to_equity": null,
+   "pe": 66.676994
+  },
+  "SBIN.NS": {
+   "market_cap": 8806932152320.0,
+   "average_volume": 9405746.0,
+   "roe": 0.15177,
+   "margin": 0.22376,
+   "debt_to_equity": null,
+   "pe": 10.204278
+  },
+  "SUNPHARMA.NS": {
+   "market_cap": 4321202143232.0,
+   "average_volume": 1956926.0,
+   "roe": null,
+   "margin": 0.20188999,
+   "debt_to_equity": 5.517,
+   "pe": 35.712868
+  },
+  "TATACONSUM.NS": {
+   "market_cap": 947133284352.0,
+   "average_volume": 1312105.0,
+   "roe": null,
+   "margin": 0.078379996,
+   "debt_to_equity": 12.159,
+   "pe": 57.789856
+  },
+  "TATAPOWER.NS": {
+   "market_cap": 1118848155648.0,
+   "average_volume": 4221990.0,
+   "roe": null,
+   "margin": 0.060890004,
+   "debt_to_equity": 168.051,
+   "pe": 28.985928
+  },
+  "TATASTEEL.NS": {
+   "market_cap": 2220428099584.0,
+   "average_volume": 24861583.0,
+   "roe": null,
+   "margin": 0.04602,
+   "debt_to_equity": 89.017,
+   "pe": 20.112993
+  },
+  "TCS.NS": {
+   "market_cap": 7507531530240.0,
+   "average_volume": 3591272.0,
+   "roe": 0.47743,
+   "margin": 0.18052,
+   "debt_to_equity": 10.211,
+   "pe": 15.08323
+  },
+  "TECHM.NS": {
+   "market_cap": 1358120615936.0,
+   "average_volume": 2394643.0,
+   "roe": null,
+   "margin": 0.086780004,
+   "debt_to_equity": 7.269,
+   "pe": 26.52708
+  },
+  "ULTRACEMCO.NS": {
+   "market_cap": 3150556692480.0,
+   "average_volume": 272247.0,
+   "roe": null,
+   "margin": 0.092930004,
+   "debt_to_equity": 29.432,
+   "pe": 36.900497
+  },
+  "VEDL.NS": {
+   "market_cap": 984205295616.0,
+   "average_volume": 10966238.0,
+   "roe": null,
+   "margin": 0.23205,
+   "debt_to_equity": 48.044,
+   "pe": 11.074253
+  },
+  "WIPRO.NS": {
+   "market_cap": 1576519335936.0,
+   "average_volume": 14488518.0,
+   "roe": 0.16128999,
+   "margin": 0.13919,
+   "debt_to_equity": 27.398,
+   "pe": 12.656871
+  }
+ }
+}
