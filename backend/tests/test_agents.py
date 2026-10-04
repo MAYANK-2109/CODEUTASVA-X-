@@ -754,3 +754,21 @@ def test_history_retries_blank_tickers_and_rejects_a_missing_index(monkeypatch, 
     monkeypatch.setattr(market, "_memory", {})
     monkeypatch.setattr(market, "CACHE_DIR", tmp_path / "empty")
     assert market.get_history(["AAA.NS"]) == (None, "unavailable")
+
+
+def test_a_price_download_that_never_answers_is_abandoned(monkeypatch, tmp_path):
+    import threading
+
+    from app.tools import market
+
+    release = threading.Event()
+    monkeypatch.setattr(market, "_fetch", lambda tickers, **kwargs: release.wait(5))   # hangs
+    monkeypatch.setattr(market, "DOWNLOAD_DEADLINE_SECONDS", 0.2)
+    monkeypatch.setattr(market, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(market, "_memory", {})
+    try:
+        assert market.get_history(["AAA.NS"]) == (None, "unavailable")     # gives up instead of waiting
+        assert market.get_cross_assets() is None
+        assert market.get_macro() == ([], None)
+    finally:
+        release.set()

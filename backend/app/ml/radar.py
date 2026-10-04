@@ -291,7 +291,10 @@ def build_hedge(signal: dict, positions: list[dict], moves: dict[str, dict], clo
         cost = sum(p["cost"] for p in worth)
         remaining = sum(p["remaining"] for p in worth)
         hedge.update(action="hedge", cost=round(cost), notional=round(value),
-                     instrument=f"Protective puts on {names}, or sell part of the position")
+                     instrument=f"Protective puts on {names}, or sell part of the position",
+                     orders=[{"type": "buy_put", "ticker": p["ticker"], "name": p["name"],
+                              "notional": round(p["value"], 2), "strike": round(p["price"], 2) if "price" in p else None,
+                              "sessions": HORIZON, "premium": round(p["cost"], 2)} for p in worth])
         hedge["summary"] = (f"Protect {names}: the further loss expected there is {_inr(remaining)}, more than the "
                             f"roughly {_inr(cost)} that {HORIZON}-session put protection on {_inr(value)} would cost, "
                             f"so hedging pays if you act before the move is priced. This loss is measured beyond "

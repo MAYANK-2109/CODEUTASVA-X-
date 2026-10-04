@@ -3,7 +3,10 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover } from '../lib/holdings'
 import { onOpenAlerts, publishAlerts } from '../lib/alerts'
-import type { Alert, AlertsResult, HoldingRisk, RiskModel, Severity, SolutionAction } from '../lib/alerts'
+import type {
+  Alert, AlertsResult, HoldingRisk, PaperAccount, PaperExecution, PaperOrder, PaperPolicy, RiskModel, Severity,
+  SolutionAction,
+} from '../lib/alerts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,16 +53,170 @@ const writeIds = (key: string, ids: string[]) => {
 
 const percent = (fraction: number, digits = 0) => `${(Math.abs(fraction) * 100).toFixed(digits)}%`
 
+const orderText = (order: PaperOrder) =>
+  order.type === 'sell'
+    ? `Sell ${order.quantity?.toLocaleString('en-IN')} ${order.name} @ ${inr(order.price ?? 0)}`
+    : `Buy put on ${inr(order.notional ?? 0)} of ${order.name}, about ${inr(order.premium ?? 0)}`
+
+const time = (iso: string) =>
+  new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+// What the paper account did with one alert: the fills, the slippage and the VaR check.
+const ExecutionResult: React.FC<{ execution: PaperExecution; showStates?: boolean }> = ({ execution, showStates }) => {
+  const filled = execution.state === 'FILLED'
+  const check = execution.verification
+  return (
+    <div
+      className={`paper-execution mt-2 rounded-xl border px-3 py-2 text-[11px] leading-relaxed ${
+        filled ? 'bg-groww-green-pale border-groww-green/30' : 'bg-red-50 border-red-100'
+      }`}
+    >
+      <p className={`font-bold ${filled ? 'text-groww-green-dark' : 'text-red-600'}`}>
+        {filled ? '✓ Filled in the paper account' : '✕ Rejected'} · {execution.mode === 'auto' ? 'by your policy' : 'one click'} ·{' '}
+        {time(execution.created_at)}
+      </p>
+      {execution.fills.map((fill, index) => (
+        <p key={index} className="text-groww-text-primary tabular-nums">
+          {fill.type === 'sell'
+            ? `Sold ${fill.quantity?.toLocaleString('en-IN')} ${fill.name} @ ₹${fill.fill_price.toFixed(2)} (reference ₹${fill.price?.toFixed(2)})`
+            : `Bought put on ${inr(fill.notional ?? 0)} of ${fill.name} for ${inr(fill.fill_price)}`}
+          <span className="text-groww-text-muted">
+            {' '}
+            · slippage {inr(fill.slippage_amount)} ({(fill.slippage_bps / 100).toFixed(2)}%
+            {fill.liquidity_known ? '' : ', liquidity unknown'})
+          </span>
+        </p>
+      ))}
+      {!filled && <p className="text-groww-text-primary">{execution.events[execution.events.length - 1]?.detail}</p>}
+      {check && (
+        <p className="mt-1 font-semibold text-groww-text-primary tabular-nums">
+          {check.horizon_sessions}-session 95% VaR: {inr(check.var_before)} → {inr(check.var_after)}
+          <span className="font-normal text-groww-text-muted">
+            {' '}
+            ({check.reduction >= 0 ? 'down' : 'up'} {inr(Math.abs(check.reduction))})
+          </span>
+        </p>
+      )}
+      {showStates && (
+        <ol className="mt-1.5 flex flex-col gap-0.5 text-groww-text-secondary">
+          {execution.events.map((event, index) => (
+            <li key={index}>
+              <span className="font-semibold text-groww-text-primary">{event.state}</span> {event.detail}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Paper account: the auto-execution policy and the ledger of what was traded
+// ---------------------------------------------------------------------------
+const PaperLedger: React.FC<{
+  account: PaperAccount | null
+  onPolicy: (policy: PaperPolicy) => void
+}> = ({ account, onPolicy }) => {
+  if (!account) {
+    return <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">The paper account could not be loaded.</p>
+  }
+  const { policy, summary } = account
+  const percentInput = (value: number, change: (fraction: number) => void, id: string) => (
+    <input
+      id={id}
+      type="number"
+      min={0.1}
+      max={50}
+      step={0.5}
+      value={Number((value * 100).toFixed(1))}
+      onChange={(e) => change(Math.max(0.001, Number(e.target.value) / 100))}
+      className="w-14 rounded-lg border border-groww-border bg-white px-1.5 py-0.5 text-[11px] text-right tabular-nums outline-none focus:border-groww-green"
+    />
+  )
+  return (
+    <div id="alerts-ledger" className="px-4 py-3 flex flex-col gap-3">
+      <p className="text-[11px] text-groww-text-secondary">
+        {account.broker}. Trades here are simulated and never reach a real broker.
+      </p>
+
+      <div className="rounded-xl border border-groww-border-light px-3 py-2.5">
+        <label className="flex items-center gap-2 text-xs font-semibold text-groww-text-primary">
+          <input
+            id="paper-policy-enabled"
+            type="checkbox"
+            checked={policy.enabled}
+            onChange={(e) => onPolicy({ ...policy, enabled: e.target.checked })}
+            className="accent-groww-green"
+          />
+          Autonomous mode: execute hedge and trim alerts by itself
+        </label>
+        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-groww-text-secondary">
+          Only when the downside is at least
+          {percentInput(policy.min_downside, (min_downside) => onPolicy({ ...policy, min_downside }), 'paper-policy-downside')}
+          % of the position, and a put costs no more than
+          {percentInput(policy.max_put_cost, (max_put_cost) => onPolicy({ ...policy, max_put_cost }), 'paper-policy-cost')}
+          % of it.
+        </p>
+        <p className="mt-1 text-[11px] text-groww-text-muted">
+          Weather and news signals also need high confidence. Each alert is executed at most once a day.
+        </p>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+        {[
+          ['Orders filled', `${summary.filled}${summary.rejected ? ` (${summary.rejected} rejected)` : ''}`],
+          ['Slippage paid', inr(summary.slippage_cost)],
+          ['Cash from sales', inr(summary.cash_from_sales)],
+          ['Put premium paid', inr(summary.premium_paid)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-groww-text-muted">{label}</dt>
+            <dd className="font-semibold text-groww-text-primary tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {account.executions.length === 0 ? (
+        <p className="py-4 text-center text-xs text-groww-text-secondary">
+          Nothing traded yet. Hedge, trim and rebalance alerts have an Execute button.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {account.executions.map((execution) => (
+            <li key={execution.id}>
+              <p className="text-xs font-semibold text-groww-text-primary">{execution.title}</p>
+              <p className="text-[11px] text-groww-text-secondary">{execution.detail}</p>
+              <ExecutionResult execution={execution} showStates />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // One alert: what happened, then the recommended action with its steps
 // ---------------------------------------------------------------------------
-const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
+const AlertItem: React.FC<{
+  alert: Alert
+  execution: PaperExecution | undefined
+  onExecute: (alert: Alert) => Promise<string | null>
+}> = ({ alert, execution, onExecute }) => {
   const style = SEVERITY[alert.severity]
   const { solution } = alert
   // Alerts that need attention open with their steps; the rest show the action and expand on request.
   const [open, setOpen] = useState(NEEDS_ATTENTION.includes(alert.severity) || Boolean(alert.hedge?.drill))
-  const [showTrail, setShowTrail] = useState(false)
+  const [showTrail, setShowTrail] = useState(true)
+  const [executing, setExecuting] = useState(false)
+  const [executeError, setExecuteError] = useState<string | null>(null)
   const trail = alert.trail ?? []
+  const orders = alert.hedge?.drill ? [] : (solution.orders ?? [])
+  const run = async () => {
+    setExecuting(true)
+    setExecuteError(await onExecute(alert))
+    setExecuting(false)
+  }
   return (
     <li className={`px-4 py-3 border-b border-groww-border-light border-l-4 ${style.border}`}>
       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${style.chip}`}>
@@ -115,6 +272,25 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
         >
           {open ? 'Hide steps' : `Show ${solution.steps.length} step${solution.steps.length === 1 ? '' : 's'} and figures`}
         </button>
+
+        {/* One-click execution in the paper account */}
+        {orders.length > 0 && !execution && (
+          <div className="mt-2 pt-2 border-t border-groww-border-light">
+            <button
+              onClick={run}
+              disabled={executing}
+              className="paper-execute w-full rounded-lg bg-groww-green text-white text-xs font-bold px-3 py-2 hover:bg-groww-green-dark disabled:opacity-60 transition-colors"
+            >
+              {executing ? 'Executing…' : `Execute in paper account: ${orderText(orders[0])}`}
+              {!executing && orders.length > 1 ? ` and ${orders.length - 1} more` : ''}
+            </button>
+            <p className="mt-1 text-[10px] text-groww-text-muted">
+              Simulated fill with slippage; no real order is placed. The portfolio VaR is rechecked after the fill.
+            </p>
+            {executeError && <p className="mt-1 text-[11px] text-red-600">{executeError}</p>}
+          </div>
+        )}
+        {execution && <ExecutionResult execution={execution} />}
       </div>
 
       {/* Evidence trail: from the signal to the decision, one step at a time */}
@@ -123,7 +299,7 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
           <button
             onClick={() => setShowTrail((value) => !value)}
             aria-expanded={showTrail}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-groww-text-secondary hover:text-groww-green"
+            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-groww-green hover:text-groww-green-dark"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M9 6h11M9 12h11M9 18h11" />
@@ -131,7 +307,7 @@ const AlertItem: React.FC<{ alert: Alert }> = ({ alert }) => {
               <circle cx="4" cy="12" r="1.2" />
               <circle cx="4" cy="18" r="1.2" />
             </svg>
-            {showTrail ? 'Hide evidence trail' : `Evidence trail: how this was worked out (${trail.length} steps)`}
+            {showTrail ? `Evidence trail: how this was worked out (${trail.length} steps) · hide` : `Show evidence trail (${trail.length} steps)`}
           </button>
           {showTrail && (
             <ol className="mt-2 flex flex-col">
@@ -241,7 +417,9 @@ const NotificationBell: React.FC = () => {
   const [seen, setSeen] = useState<string[]>([])
   const [drills, setDrills] = useState<{ id: string; title: string }[]>([])
   const [scenario, setScenario] = useState('')
-  const [tab, setTab] = useState<'alerts' | 'forecast'>('alerts')
+  const [tab, setTab] = useState<'alerts' | 'forecast' | 'ledger'>('alerts')
+  const [account, setAccount] = useState<PaperAccount | null>(null)
+  const holdingsRef = useRef<unknown[] | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
   )
@@ -254,6 +432,48 @@ const NotificationBell: React.FC = () => {
     setSeen(readIds(seenKey))
   }, [seenKey])
 
+  const loadAccount = useCallback(async () => {
+    if (!user?.id) return
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/broker/account?user_id=${encodeURIComponent(user.id)}`)
+      if (response.ok) setAccount(await response.json())
+    } catch {
+      // The ledger tab says it could not be loaded.
+    }
+  }, [user?.id])
+
+  // Returns an error message, or null when the order went through to the ledger.
+  const execute = async (alert: Alert): Promise<string | null> => {
+    if (!user?.id) return 'Sign in to use the paper account.'
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/broker/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id, alert_id: alert.id, holdings: holdingsRef.current, scenario: scenario || null,
+        }),
+      })
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null)
+        return detail?.detail ?? `The order could not be placed (${response.status}).`
+      }
+      await loadAccount()
+      return null
+    } catch {
+      return 'The paper account could not be reached.'
+    }
+  }
+
+  const setPolicy = async (policy: PaperPolicy) => {
+    if (!user?.id) return
+    setAccount((current) => (current ? { ...current, policy } : current))
+    await fetch(`${BACKEND_URL}/api/broker/policy`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id, ...policy }),
+    }).catch(() => null)
+  }
+
   const load = useCallback(async () => {
     if (!user?.id) return
     try {
@@ -262,6 +482,7 @@ const NotificationBell: React.FC = () => {
         .select('name, symbol, isin, units, buy_price, type')
         .eq('user_id', user.id)
       const holdings = error ? null : (data ?? []).filter((h) => !isLeftover(h))
+      holdingsRef.current = holdings
       const response = await fetch(`${BACKEND_URL}/api/alerts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -272,6 +493,16 @@ const NotificationBell: React.FC = () => {
       setResult(fresh)
       setFailed(false)
       publishAlerts({ result: fresh, failed: false, loading: false })
+
+      // Autonomous mode: the backend executes what the user's policy approves; it does nothing when the policy is off.
+      if (!scenario) {
+        await fetch(`${BACKEND_URL}/api/broker/auto`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.id, holdings }),
+        }).catch(() => null)
+      }
+      loadAccount()
 
       // Tell the browser about alerts it has not announced yet, if the user allowed it.
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -289,7 +520,7 @@ const NotificationBell: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [user?.id, notifiedKey, scenario])
+  }, [user?.id, notifiedKey, scenario, loadAccount])
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/api/alerts/drills`)
@@ -320,6 +551,13 @@ const NotificationBell: React.FC = () => {
   }, [open])
 
   const alerts = result?.alerts ?? []
+  // Today's execution per alert, so an alert that was traded shows its fill instead of the button.
+  const today = new Date().toDateString()
+  const todays = new Map(
+    (account?.executions ?? [])
+      .filter((execution) => new Date(execution.created_at).toDateString() === today)
+      .map((execution) => [execution.alert_id, execution]),
+  )
   const unseen = alerts.filter(
     (a) => NEEDS_ATTENTION.includes(a.severity) && !a.hedge?.drill && !seen.includes(a.id),
   ).length
@@ -412,7 +650,13 @@ const NotificationBell: React.FC = () => {
           </header>
 
           <div className="flex border-b border-groww-border-light text-xs font-semibold" role="tablist">
-            {([['alerts', `Alerts${result ? ` (${alerts.length})` : ''}`], ['forecast', 'Risk forecast']] as const).map(
+            {(
+              [
+                ['alerts', `Alerts${result ? ` (${alerts.length})` : ''}`],
+                ['forecast', 'Risk forecast'],
+                ['ledger', `Paper ledger${account?.executions.length ? ` (${account.executions.length})` : ''}`],
+              ] as const
+            ).map(
               ([id, label]) => (
                 <button
                   key={id}
@@ -442,6 +686,7 @@ const NotificationBell: React.FC = () => {
               <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">Checking your holdings…</p>
             )}
             {result && tab === 'forecast' && <RiskForecast ranking={result.risk_ranking ?? []} model={result.risk_model} />}
+            {tab === 'ledger' && <PaperLedger account={account} onPolicy={setPolicy} />}
             {result && tab === 'alerts' && alerts.length === 0 && (
               <p className="px-4 py-8 text-center text-xs text-groww-text-secondary">
                 Nothing needs your attention. No sudden moves, losses beyond normal risk, or negative news were
@@ -451,7 +696,12 @@ const NotificationBell: React.FC = () => {
             {tab === 'alerts' && (
               <ul>
                 {alerts.map((alert) => (
-                  <AlertItem key={alert.id} alert={alert} />
+                  <AlertItem
+                    key={alert.id}
+                    alert={alert}
+                    execution={todays.get(alert.id)}
+                    onExecute={execute}
+                  />
                 ))}
               </ul>
             )}

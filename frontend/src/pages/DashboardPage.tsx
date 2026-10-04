@@ -6,7 +6,6 @@ import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
 import NotificationBell from '../components/NotificationBell'
 import RiskTerminal from '../components/RiskTerminal'
-import AITerminal from '../components/AITerminal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -824,11 +823,6 @@ const DashboardPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              </section>
-
-              {/* ── 1.5 AUTONOMOUS MULTI-AGENT INTELLIGENCE TERMINAL ── */}
-              <section id="autonomous-ai-terminal-section" className="transition-all duration-200">
-                <AITerminal />
               </section>
 
               {/* ── 2. NEWS TRAIL CARD (headlines about the sectors the user holds) ── */}

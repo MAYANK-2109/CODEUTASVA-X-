@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import EvidenceTrail from './EvidenceTrail'
+import type { TrailDecision, TrailStep } from './EvidenceTrail'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,33 +41,13 @@ interface Forecast {
   cross_assets_evidence: string | null
 }
 
-// One agent's part in the analysis: how it worked, what it found, what it relied on.
-interface TrailStep {
-  agent: string
-  title: string
-  how: string
-  result: string
-  evidence: string[]
-  uses: string[]
-  notes: string[]
-}
-
-// The rule behind the hedge decision and the comparison that settled it.
-interface Decision {
-  action: Answer['action']
-  rule: string
-  comparison: string
-  sizing: string[]
-  evidence: string[]
-}
-
 interface Answer {
   text: string
   evidence: Evidence[]
   hedges: Hedge[]
   action: 'hedge' | 'monitor' | 'no_hedge' | 'none'
   forecast?: Forecast | null
-  decision?: Decision | null
+  decision?: TrailDecision | null
   trail?: TrailStep[]
   gaps: string[]
   writer: 'llm' | 'template'
@@ -364,134 +346,11 @@ const PipelineView: React.FC<{ steps: Record<string, Step>; finished: boolean }>
 }
 
 // ---------------------------------------------------------------------------
-// Evidence trail: why the assistant recommends what it does, step by step
-// ---------------------------------------------------------------------------
-const AGENT_LABELS: Record<string, string> = Object.fromEntries(PIPELINE.flat().map((a) => [a.id, a.label]))
-
-const EvidenceTags: React.FC<{ label: string; ids: string[]; byId: Map<string, Evidence> }> = ({ label, ids, byId }) =>
-  ids.length === 0 ? null : (
-    <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-groww-text-muted">
-      <span className="font-semibold">{label}</span>
-      {ids.map((id) => (
-        <span
-          key={id}
-          title={byId.get(id)?.claim}
-          className="px-1.5 rounded bg-groww-green-light text-groww-green text-[10px] font-semibold cursor-help"
-        >
-          {id}
-        </span>
-      ))}
-    </p>
-  )
-
-const EvidenceTrail: React.FC<{ answer: Answer; steps: Record<string, Step> }> = ({ answer, steps }) => {
-  const trail = answer.trail ?? []
-  const byId = new Map(answer.evidence.map((item) => [item.id, item]))
-  const { decision } = answer
-  return (
-    <div id="chat-trail" className="mt-2 flex flex-col gap-3">
-      {decision && (
-        <div className="rounded-xl bg-groww-green-pale border border-groww-green/30 px-3 py-2.5 text-xs leading-relaxed">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Why this recommendation</p>
-            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${ACTION_LABELS[decision.action].className}`}>
-              {ACTION_LABELS[decision.action].text}
-            </span>
-          </div>
-          <p className="mt-1 font-semibold text-groww-text-primary">{decision.comparison}</p>
-          <p className="mt-1 text-groww-text-secondary">
-            <span className="font-semibold">The rule: </span>
-            {decision.rule}
-          </p>
-          {decision.sizing.length > 0 && (
-            <ul className="mt-1 flex flex-col gap-1 text-groww-text-secondary">
-              {decision.sizing.map((line, i) => (
-                <li key={i}>
-                  <span className="font-semibold">How it was sized: </span>
-                  {line}
-                </li>
-              ))}
-            </ul>
-          )}
-          <EvidenceTags label="Rests on" ids={decision.evidence} byId={byId} />
-        </div>
-      )}
-
-      <ol className="flex flex-col">
-        {trail.map((step, index) => {
-          const run = steps[step.agent]
-          const found = step.evidence.map((id) => byId.get(id)).filter((item): item is Evidence => Boolean(item))
-          return (
-            <li key={step.agent} className="relative flex gap-2.5 pb-3.5 last:pb-0">
-              {index < trail.length - 1 && (
-                <span className="absolute left-[10px] top-6 bottom-0 w-px bg-groww-border" aria-hidden />
-              )}
-              <span
-                className={`relative shrink-0 w-[21px] h-[21px] rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
-                  run?.status === 'degraded' ? 'bg-amber-500' : 'bg-groww-green'
-                }`}
-              >
-                {index + 1}
-              </span>
-              <div className="min-w-0 flex-1 text-xs leading-relaxed">
-                <p className="flex items-baseline gap-2">
-                  <span className="font-semibold text-groww-text-primary">{step.title}</span>
-                  <span className="ml-auto shrink-0 text-[10px] text-groww-text-muted tabular-nums">
-                    {AGENT_LABELS[step.agent] ?? step.agent} agent
-                    {run ? ` · ${run.ms >= 1000 ? `${(run.ms / 1000).toFixed(1)} s` : `${run.ms} ms`}` : ''}
-                  </span>
-                </p>
-                {run?.status === 'degraded' && (
-                  <p className="text-[11px] font-semibold text-amber-700">Ran with missing data; see the notes under the answer.</p>
-                )}
-                <p className="text-groww-text-secondary">
-                  <span className="font-semibold">How: </span>
-                  {step.how}
-                </p>
-                <p className="mt-0.5 text-groww-text-primary">
-                  <span className="font-semibold">Result: </span>
-                  {step.result}
-                </p>
-                {step.notes.length > 0 && (
-                  <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-groww-text-secondary">
-                    {step.notes.map((note, i) => (
-                      <li key={i} className="flex gap-1.5">
-                        <span className="mt-[7px] w-1 h-1 rounded-full bg-groww-text-muted shrink-0" />
-                        <span>{note}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <EvidenceTags
-                  label={step.agent === 'synthesiser' ? 'Cited in the answer' : 'Relied on'}
-                  ids={step.uses}
-                  byId={byId}
-                />
-                {found.length > 0 && (
-                  <ul className="mt-1.5 flex flex-col gap-1 text-[11px]">
-                    {found.map((item) => (
-                      <li key={item.id} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
-                        <span className="font-semibold text-groww-green">{item.id}</span> {item.claim}
-                        <span className="block text-groww-text-muted">Source: {item.source}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </li>
-          )
-        })}
-      </ol>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // One assistant reply
 // ---------------------------------------------------------------------------
 const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) => {
   const { answer, error, steps } = message
-  const [showTrail, setShowTrail] = useState(false)
+  const [showEvidence, setShowEvidence] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const finished = Boolean(answer || error)
@@ -551,6 +410,11 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
             </div>
           )}
 
+          {/* Why this was recommended, step by step; open by default */}
+          <div id="chat-trail" className="mt-3">
+            <EvidenceTrail trail={answer.trail} decision={answer.decision} evidence={answer.evidence} steps={steps} />
+          </div>
+
           {answer.forecast && <ForecastCard forecast={answer.forecast} onCite={cite} active={activeId} />}
 
           {answer.hedges.length > 0 && (
@@ -580,48 +444,26 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
             </ul>
           )}
 
-          <div className="mt-3 pt-2 border-t border-groww-border-light flex items-center gap-2 text-[11px] text-groww-text-muted">
-            <button
-              id="chat-trail-toggle"
-              onClick={() => setShowTrail((v) => !v)}
-              aria-expanded={showTrail}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-semibold transition-colors duration-150 ${
-                showTrail
-                  ? 'bg-groww-green border-groww-green text-white'
-                  : 'border-groww-green/40 text-groww-green hover:bg-groww-green-light'
-              }`}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M9 6h11M9 12h11M9 18h11" />
-                <circle cx="4" cy="6" r="1.2" />
-                <circle cx="4" cy="12" r="1.2" />
-                <circle cx="4" cy="18" r="1.2" />
-              </svg>
-              {showTrail ? 'Hide evidence trail' : 'Evidence trail'}
-            </button>
+          <div className="mt-3 pt-2 border-t border-groww-border-light flex items-center gap-3 text-[11px] text-groww-text-muted">
             <span>
-              {Object.keys(steps).length} agents · {(totalMs / 1000).toFixed(1)}s · {answer.evidence.length} evidence rows
+              {Object.keys(steps).length} agents · {(totalMs / 1000).toFixed(1)}s
             </span>
+            <button onClick={() => setShowEvidence((v) => !v)} aria-expanded={showEvidence} className="hover:text-groww-green">
+              {showEvidence ? 'Hide' : 'All'} {answer.evidence.length} evidence rows
+            </button>
             {answer.writer === 'template' && <span className="ml-auto">rule-based wording</span>}
           </div>
 
-          {showTrail &&
-            (answer.trail?.length ? (
-              <EvidenceTrail answer={answer} steps={steps} />
-            ) : (
-              // An older backend sends no trail; the agent steps and evidence are still shown.
-              <div className="mt-2 flex flex-col gap-2">
-                <PipelineView steps={steps} finished />
-                <ul className="flex flex-col gap-1.5 text-[11px]">
-                  {answer.evidence.map((item) => (
-                    <li key={item.id} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
-                      <span className="font-semibold text-groww-green">{item.id}</span> {item.claim}
-                      <span className="block text-groww-text-muted">Source: {item.source}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+          {showEvidence && (
+            <ul className="mt-2 flex flex-col gap-1.5 text-[11px]">
+              {answer.evidence.map((item) => (
+                <li key={item.id} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
+                  <span className="font-semibold text-groww-green">{item.id}</span> {item.claim}
+                  <span className="block text-groww-text-muted">Source: {item.source}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>

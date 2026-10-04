@@ -23,12 +23,27 @@ def pct(fraction: float, digits: int = 1) -> str:
 
 
 def solution(action: str, headline: str, steps: list[str | None],
-             figures: list[tuple[str, str]] | None = None, alternative: str | None = None, why: str = "") -> dict:
+             figures: list[tuple[str, str]] | None = None, alternative: str | None = None, why: str = "",
+             orders: list[dict] | None = None, metrics: dict | None = None) -> dict:
     """`action` is one of hedge, trim, rebalance, watch, hold, review. `why` is
-    the rule that picked the action, with the numbers it compared."""
+    the rule that picked the action, with the numbers it compared. `orders` are
+    the trades that carry it out, for the broker; `metrics` are the downside and
+    put cost as fractions of the position, for an auto-execution policy."""
     return {"action": action, "headline": headline, "steps": [s for s in steps if s],
             "figures": [{"label": label, "value": value} for label, value in figures or []],
-            "alternative": alternative, "why": why}
+            "alternative": alternative, "why": why, "orders": orders or [], "metrics": metrics or {}}
+
+
+def sell_order(position: dict, shares: int) -> dict:
+    return {"type": "sell", "ticker": position["ticker"], "name": position["name"],
+            "quantity": shares, "price": round(position["price"], 2)}
+
+
+def put_order(position: dict, premium: float, notional: float | None = None) -> dict:
+    """An at-the-money put on the holding for the horizon, priced by the estimate used in the alert."""
+    return {"type": "buy_put", "ticker": position["ticker"], "name": position["name"],
+            "notional": round(notional if notional is not None else position["value"], 2),
+            "strike": round(position["price"], 2), "sessions": HORIZON, "premium": round(premium, 2)}
 
 
 def text(sol: dict) -> str:
@@ -57,6 +72,7 @@ def protect_or_trim(position: dict, score: dict, annual_volatility: float, total
         ("Its usual downside", f'{inr(loss_usual)} · -{pct(score["usual_downside"])}'),
         (f"Put protection, {HORIZON} sessions", f"about {inr(put_cost)}"),
     ]
+    metrics = {"downside": abs(score["downside"]), "put_cost": put_cost / value if value else 0.0}
     alert_step = (f"Set a price alert at ₹{stop:,.2f}: a close below it is a fall the model expects only one "
                   f"week in twenty, and a reason to review the position.")
     shares = min(math.ceil(units * excess / loss_now), math.floor(units)) if loss_now > 0 and excess > 0 else 0
@@ -89,7 +105,8 @@ def protect_or_trim(position: dict, score: dict, annual_volatility: float, total
             figures, f"If the stock has no listed options, {trim}.",
             why=rule + f"Here the extra downside is {inr(loss_now)} - {inr(loss_usual)} = {inr(excess)}. A put for "
                        f"{HORIZON} sessions is estimated at {inr(put_cost)}, which is less, so protection is "
-                       f"chosen over selling.")
+                       f"chosen over selling.",
+            orders=[put_order(position, put_cost)], metrics=metrics)
     return solution(
         "trim", f"Trim {name} by {shares:,} share{'s' if shares != 1 else ''}, about {inr(shares * price)}",
         [f"{trim[0].upper()}{trim[1:]}.",
@@ -99,7 +116,8 @@ def protect_or_trim(position: dict, score: dict, annual_volatility: float, total
         figures,
         why=rule + f"Here the extra downside is {inr(loss_now)} - {inr(loss_usual)} = {inr(excess)}. A put for "
                    f"{HORIZON} sessions is estimated at {inr(put_cost)}, which is more, so selling is chosen: "
-                   f"{units:,.0f} shares x {inr(excess)} / {inr(loss_now)}, rounded up, is {shares:,} shares.")
+                   f"{units:,.0f} shares x {inr(excess)} / {inr(loss_now)}, rounded up, is {shares:,} shares.",
+        orders=[sell_order(position, shares)], metrics=metrics)
 
 
 def hold_after_move(name: str, fell: bool, pattern: str, stop: float | None, large: str | None) -> dict:
@@ -127,8 +145,10 @@ def rebalance(largest: dict, target: float, total: float, var_before: float | No
     price, units = largest.get("price"), largest.get("units")
     figures = [("Share now", pct(largest["value"] / total, 0)), ("Target share", pct(target, 0)),
                ("A 10% fall in it costs", inr(largest["value"] * 0.1))]
+    orders = []
     if price and units:
         shares = min(math.ceil(amount / price), math.floor(units))
+        orders = [sell_order(largest, shares)] if shares >= 1 else []
         headline = (f'Sell {shares:,} share{"s" if shares != 1 else ""} of {largest["name"]}, about '
                     f"{inr(shares * price)}, to bring it to {pct(target, 0)}")
     else:
@@ -146,7 +166,8 @@ def rebalance(largest: dict, target: float, total: float, var_before: float | No
         figures,
         why=f"Rule: bring the largest holding down to the share that nine in ten institutional portfolios stay "
             f"under, {pct(target, 0)}. Amount to sell = its value {inr(largest['value'])} - {pct(target, 0)} x "
-            f"portfolio value {inr(total)} = {inr(amount)}.")
+            f"portfolio value {inr(total)} = {inr(amount)}.",
+        orders=orders)
 
 
 def index_hedge(total: float, beta: float, vix: float | None, headline: str, first_step: str) -> dict:
@@ -185,8 +206,13 @@ def from_hedge(hedge: dict) -> dict:
            f"already priced in, is larger than the estimated price of a put on it for {HORIZON} sessions. "
            + hedge["summary"])
     if hedge["action"] == "hedge":
+        notional = hedge["notional"] or 1.0
         return solution("hedge", f'{hedge["instrument"]}: protect {inr(hedge["notional"])} for about '
-                                 f'{inr(hedge["cost"])}', steps, figures, why=why)
+                                 f'{inr(hedge["cost"])}', steps, figures, why=why,
+                        # A drill is a rehearsal, so it carries no orders to execute.
+                        orders=[] if hedge.get("drill") else hedge.get("orders", []),
+                        metrics={"downside": hedge["expected_loss"] / notional, "put_cost": hedge["cost"] / notional,
+                                 "confidence": hedge.get("confidence")})
     if hedge["action"] == "monitor":
         return solution("watch", "Do not hedge yet; keep watching", steps, figures, why=why)
     return solution("hold", "No hedge needed", steps, figures, why=why)
