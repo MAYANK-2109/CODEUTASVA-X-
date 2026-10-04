@@ -62,6 +62,8 @@ def offline(monkeypatch):
         [{"ticker": "^INDIAVIX", "label": "India VIX", "value": 24.0, "change_1m_pct": 30.0}], "now"))
 
     monkeypatch.setattr(nodes, "get_cross_assets", lambda: None)
+    # Whatever the real vector database is doing, offline tests search locally.
+    monkeypatch.setitem(vector_store._state, "ready", False)
 
     def use(closes):
         monkeypatch.setattr(nodes, "get_history", lambda tickers: (closes, "live" if closes is not None else "unavailable"))
