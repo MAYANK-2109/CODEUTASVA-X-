@@ -200,8 +200,8 @@ const LoginPage: React.FC = () => {
           </div>
 
           <h1 className="text-4xl font-bold mb-4 leading-tight">
-            Grow your<br />
-            <span style={{ color: 'rgba(255,255,255,0.82)' }}>financial future</span>
+            finGo<br />
+            <span style={{ color: 'rgba(255,255,255,0.82)' }}>your financial future</span>
           </h1>
           <p className="text-base leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
             Simple, transparent, and powerful tools to help you achieve your goals.
