@@ -208,3 +208,13 @@ def test_asset_class_inferences():
     assert _infer_type("Reliance Industries Ltd", "INE002A01018") == "STOCK"
     assert _infer_type("Infosys Limited", "INE009A01021") == "STOCK"
     assert _infer_type("Tata Motors Ltd") == "STOCK"
+
+
+def test_an_equity_isin_is_a_stock_whatever_the_name_suggests():
+    from app.portfolio.extractor import _infer_type
+
+    # Company names that contain a fund house or the word "India" were read as mutual funds.
+    assert _infer_type("KOTAK MAHINDRA BANK LIMITED", "INE237A01036") == "STOCK"
+    assert _infer_type("MARUTI SUZUKI INDIA LIMITED", "INE585B01010") == "STOCK"
+    # A fund's ISIN ("INF") still goes by its name.
+    assert _infer_type("Nippon India ETF Gold BeES", "INF204KB17I5") == "COMMODITY"

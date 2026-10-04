@@ -267,6 +267,12 @@ def _infer_type(name: str, isin: str = "") -> str:
     n = (name or "").strip().upper()
     isin_clean = (isin or "").strip().upper()
 
+    # 0. The ISIN settles it for shares: "INE" is a company and "01" in the eighth
+    # and ninth places is its equity. Names alone mislead ("Kotak Mahindra Bank"
+    # and "Maruti Suzuki India" read like fund houses and index funds).
+    if len(isin_clean) == 12 and isin_clean.startswith("INE") and isin_clean[7:9] == "01":
+        return "STOCK"
+
     # 1. COMMODITY check (Gold, Silver, SGB, Bullion, Commodity funds/ETFs)
     if "SGB" in n or "SOVEREIGN GOLD" in n:
         return "COMMODITY"
