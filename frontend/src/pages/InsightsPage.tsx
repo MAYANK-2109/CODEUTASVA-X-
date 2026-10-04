@@ -238,10 +238,10 @@ const WeatherSiteCard: React.FC<{
           <p className={`font-semibold text-sm leading-tight ${isAlert ? 'text-red-800' : 'text-groww-text-primary'}`}>
             {site.name}
           </p>
-          <p className="text-[11px] text-groww-text-muted mt-0.5 line-clamp-1">{site.relevance}</p>
+          <p className="text-xs text-groww-text-muted mt-0.5 line-clamp-1">{site.relevance}</p>
         </div>
         <span
-          className={`shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+          className={`shrink-0 flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
             isAlert
               ? 'bg-red-100 text-red-700'
               : 'bg-green-100 text-green-700'
@@ -274,7 +274,7 @@ const WeatherSiteCard: React.FC<{
               <span className="font-medium text-red-800">
                 {alertDays[kind]}d {WEATHER_KINDS[kind].label}
               </span>
-              <span className="text-red-600 text-[11px]">
+              <span className="text-red-600 text-xs">
                 peak {Math.round(summary[kind])} {WEATHER_KINDS[kind].unit}
               </span>
             </div>
@@ -283,7 +283,7 @@ const WeatherSiteCard: React.FC<{
       ) : (
         <div className="flex flex-wrap gap-2">
           {KIND_ORDER.map(kind => (
-            <div key={kind} className="flex items-center gap-1.5 text-[11px] text-groww-text-muted bg-gray-50 rounded-lg px-2 py-1">
+            <div key={kind} className="flex items-center gap-1.5 text-xs text-groww-text-muted bg-gray-50 rounded-lg px-2 py-1">
               {WEATHER_ICONS[kind]}
               <span>{Math.round(summary[kind])} {WEATHER_KINDS[kind].unit}</span>
             </div>
@@ -292,7 +292,7 @@ const WeatherSiteCard: React.FC<{
       )}
 
       {/* Holdings exposure */}
-      <div className="border-t border-groww-border-light pt-2 text-[11px]">
+      <div className="border-t border-groww-border-light pt-2 text-xs">
         {hasHoldings ? (
           <p className={`font-medium ${isAlert ? 'text-red-700' : 'text-groww-text-primary'}`}>
             Your holdings: {myHoldings.join(', ')}
@@ -831,7 +831,7 @@ const InsightsPage: React.FC = () => {
                   <div className="min-w-0">
                     <p className="text-xs text-groww-text-secondary">{tile.label}</p>
                     <p className="text-lg sm:text-xl font-bold text-groww-text-primary mt-0.5 leading-tight">{tile.value}</p>
-                    <p className="text-[11px] text-groww-text-muted mt-0.5 truncate">{tile.note}</p>
+                    <p className="text-xs text-groww-text-muted mt-0.5 truncate">{tile.note}</p>
                   </div>
                 </div>
               ))}
@@ -917,7 +917,7 @@ const InsightsPage: React.FC = () => {
                   lanes={lanes}
                 />
               </div>
-              <p className="mt-2 text-[11px] text-groww-text-muted flex items-center gap-1 flex-wrap">
+              <p className="mt-2 text-xs text-groww-text-muted flex items-center gap-1 flex-wrap">
                 <IconTriangleDown className="w-2.5 h-2.5 text-groww-green shrink-0" />
                 <span>marks a past event. Hover the chart to read indexed values.</span>
                 {data.prices.truncated && ' Only the eight largest holdings can be plotted.'}
@@ -952,7 +952,7 @@ const InsightsPage: React.FC = () => {
                             }}
                           />
                         </div>
-                        <p className="text-[11px] text-groww-text-muted mt-1 truncate">{sector.holdings.join(', ')}</p>
+                        <p className="text-xs text-groww-text-muted mt-1 truncate">{sector.holdings.join(', ')}</p>
                       </li>
                     ))}
                   </ul>
@@ -964,7 +964,7 @@ const InsightsPage: React.FC = () => {
                 <section id="insights-weather" className="bg-white rounded-2xl border border-groww-border-light shadow-card p-4 sm:p-5">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <h2 className="text-base font-bold text-groww-text-primary">Weather Outlook</h2>
-                    <span className="text-[11px] text-groww-text-muted">7-day forecast</span>
+                    <span className="text-xs text-groww-text-muted">7-day forecast</span>
                   </div>
                   <p className="text-xs text-groww-text-secondary mb-4">
                     Sites where listed companies operate, linked to your portfolio
@@ -997,7 +997,7 @@ const InsightsPage: React.FC = () => {
                       )}
 
                       {/* Threshold legend */}
-                      <div className="flex flex-wrap gap-3 mb-4 text-[11px] text-groww-text-muted">
+                      <div className="flex flex-wrap gap-3 mb-4 text-xs text-groww-text-muted">
                         <span className="flex items-center gap-1.5">
                           <span className="text-blue-500">{WEATHER_ICONS.rain}</span>
                           Alert &gt; {weather.data.thresholds.rain_mm} mm/day
@@ -1033,7 +1033,7 @@ const InsightsPage: React.FC = () => {
                           )
                         })}
                       </div>
-                      <p className="mt-4 text-[11px] text-groww-text-muted">Source: {weather.data.source}</p>
+                      <p className="mt-4 text-xs text-groww-text-muted">Source: {weather.data.source}</p>
                     </>
                   )}
                 </section>

@@ -68,7 +68,7 @@ const ExecutionResult: React.FC<{ execution: PaperExecution; showStates?: boolea
   const check = execution.verification
   return (
     <div
-      className={`paper-execution mt-2 rounded-xl border px-3 py-2 text-[11px] leading-relaxed ${
+      className={`paper-execution mt-2 rounded-xl border px-3 py-2 text-xs leading-relaxed ${
         filled ? 'bg-groww-green-pale border-groww-green/30' : 'bg-red-50 border-red-100'
       }`}
     >
@@ -132,12 +132,12 @@ const PaperLedger: React.FC<{
       step={0.5}
       value={Number((value * 100).toFixed(1))}
       onChange={(e) => change(Math.max(0.001, Number(e.target.value) / 100))}
-      className="w-14 rounded-lg border border-groww-border bg-white px-1.5 py-0.5 text-[11px] text-right tabular-nums outline-none focus:border-groww-green"
+      className="w-14 rounded-lg border border-groww-border bg-white px-1.5 py-0.5 text-xs text-right tabular-nums outline-none focus:border-groww-green"
     />
   )
   return (
     <div id="alerts-ledger" className="px-4 py-3 flex flex-col gap-3">
-      <p className="text-[11px] text-groww-text-secondary">
+      <p className="text-xs text-groww-text-secondary">
         {account.broker}. Trades here are simulated and never reach a real broker.
       </p>
 
@@ -152,19 +152,19 @@ const PaperLedger: React.FC<{
           />
           Autonomous mode: execute hedge and trim alerts by itself
         </label>
-        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-groww-text-secondary">
+        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-groww-text-secondary">
           Only when the downside is at least
           {percentInput(policy.min_downside, (min_downside) => onPolicy({ ...policy, min_downside }), 'paper-policy-downside')}
           % of the position, and a put costs no more than
           {percentInput(policy.max_put_cost, (max_put_cost) => onPolicy({ ...policy, max_put_cost }), 'paper-policy-cost')}
           % of it.
         </p>
-        <p className="mt-1 text-[11px] text-groww-text-muted">
+        <p className="mt-1 text-xs text-groww-text-muted">
           Weather and news signals also need high confidence. Each alert is executed at most once a day.
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
         {[
           ['Orders filled', `${summary.filled}${summary.rejected ? ` (${summary.rejected} rejected)` : ''}`],
           ['Slippage paid', inr(summary.slippage_cost)],
@@ -187,7 +187,7 @@ const PaperLedger: React.FC<{
           {account.executions.map((execution) => (
             <li key={execution.id}>
               <p className="text-xs font-semibold text-groww-text-primary">{execution.title}</p>
-              <p className="text-[11px] text-groww-text-secondary">{execution.detail}</p>
+              <p className="text-xs text-groww-text-secondary">{execution.detail}</p>
               <ExecutionResult execution={execution} showStates />
             </li>
           ))}
@@ -232,7 +232,7 @@ const AlertItem: React.FC<{
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <p className="text-[13px] font-bold text-groww-text-primary leading-snug">{alert.title}</p>
-            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${ACTION[solution.action].chip}`}>
+            <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${ACTION[solution.action].chip}`}>
               {ACTION[solution.action].label}
             </span>
           </div>
@@ -249,7 +249,7 @@ const AlertItem: React.FC<{
         <dl className="mt-2.5 mx-3.5 grid grid-cols-2 gap-1.5">
           {shown.map((figure) => (
             <div key={figure.label} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
-              <dt className="text-[10px] text-groww-text-muted leading-tight truncate" title={figure.label}>{figure.label}</dt>
+              <dt className="text-[11px] text-groww-text-muted leading-tight truncate" title={figure.label}>{figure.label}</dt>
               <dd className="text-xs font-bold text-groww-text-primary tabular-nums leading-snug">{figure.value}</dd>
             </div>
           ))}
@@ -262,7 +262,7 @@ const AlertItem: React.FC<{
           <ol className="flex flex-col gap-1.5 text-xs text-groww-text-primary leading-relaxed">
             {solution.steps.map((step, index) => (
               <li key={index} className="flex gap-2">
-                <span className="shrink-0 w-4 h-4 mt-0.5 rounded-full bg-groww-green-light text-[10px] font-bold text-groww-green flex items-center justify-center">
+                <span className="shrink-0 w-4 h-4 mt-0.5 rounded-full bg-groww-green-light text-[11px] font-bold text-groww-green flex items-center justify-center">
                   {index + 1}
                 </span>
                 <span>{step}</span>
@@ -270,7 +270,7 @@ const AlertItem: React.FC<{
             ))}
           </ol>
           {solution.alternative && (
-            <p className="text-[11px] text-groww-text-secondary leading-relaxed">
+            <p className="text-xs text-groww-text-secondary leading-relaxed">
               <span className="font-semibold text-groww-text-primary">Alternative: </span>
               {solution.alternative}
             </p>
@@ -278,7 +278,7 @@ const AlertItem: React.FC<{
           {/* Evidence trail: from the signal to the decision, one step at a time */}
           {trail.length > 0 && (
             <div className="alert-trail rounded-xl bg-groww-bg-primary px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Evidence trail</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">Evidence trail</p>
               <ol className="mt-2 flex flex-col">
                 {trail.map((step, index) => (
                   <li key={index} className="relative flex gap-2.5 pb-2.5 last:pb-0">
@@ -286,13 +286,13 @@ const AlertItem: React.FC<{
                     {index < trail.length - 1 && (
                       <span className="absolute left-[9px] top-5 bottom-0 w-px bg-groww-border" aria-hidden />
                     )}
-                    <span className="relative shrink-0 w-[19px] h-[19px] rounded-full bg-groww-green text-white text-[10px] font-bold flex items-center justify-center">
+                    <span className="relative shrink-0 w-[19px] h-[19px] rounded-full bg-groww-green text-white text-[11px] font-bold flex items-center justify-center">
                       {index + 1}
                     </span>
                     <div className="min-w-0 text-xs leading-relaxed">
                       <p className="font-semibold text-groww-text-primary">{step.title}</p>
                       <p className="text-groww-text-secondary">{step.finding}</p>
-                      {step.method && <p className="mt-0.5 text-[11px] text-groww-text-muted">{step.method}</p>}
+                      {step.method && <p className="mt-0.5 text-xs text-groww-text-muted">{step.method}</p>}
                     </div>
                   </li>
                 ))}
@@ -315,7 +315,7 @@ const AlertItem: React.FC<{
             onClick={run}
             disabled={executing}
             title="Simulated fill with slippage in the paper account. No real order is placed; the portfolio VaR is rechecked after the fill."
-            className="paper-execute min-w-0 rounded-lg bg-groww-green text-white text-[11px] font-bold px-3 py-1.5 text-left leading-snug hover:bg-groww-green-dark disabled:opacity-60 transition-colors"
+            className="paper-execute min-w-0 rounded-lg bg-groww-green text-white text-xs font-bold px-3 py-1.5 text-left leading-snug hover:bg-groww-green-dark disabled:opacity-60 transition-colors"
           >
             {executing ? 'Executing…' : `Paper trade: ${orderText(orders[0])}`}
             {!executing && orders.length > 1 ? ` +${orders.length - 1}` : ''}
@@ -324,7 +324,7 @@ const AlertItem: React.FC<{
         <button
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="alert-toggle ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-groww-green hover:text-groww-green-dark"
+          className="alert-toggle ml-auto shrink-0 inline-flex items-center gap-1 text-xs font-bold text-groww-green hover:text-groww-green-dark"
         >
           {open ? 'Hide' : trail.length ? `Evidence trail · ${trail.length} steps` : 'Details'}
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
@@ -332,7 +332,7 @@ const AlertItem: React.FC<{
           </svg>
         </button>
       </div>
-      {executeError && <p className="px-3.5 pb-2 text-[11px] text-red-600 bg-groww-bg-primary/60">{executeError}</p>}
+      {executeError && <p className="px-3.5 pb-2 text-xs text-red-600 bg-groww-bg-primary/60">{executeError}</p>}
     </li>
   )
 }
@@ -354,11 +354,11 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
   return (
     <div id="alerts-forecast" className="px-4 py-3">
       <table className="w-full text-xs tabular-nums">
-        <caption className="text-left text-[11px] text-groww-text-secondary pb-2">
+        <caption className="text-left text-xs text-groww-text-secondary pb-2">
           The next {sessions} sessions for each holding, largest rupee downside first.
         </caption>
         <thead>
-          <tr className="text-left text-[11px] text-groww-text-muted">
+          <tr className="text-left text-xs text-groww-text-muted">
             <th className="font-medium pb-1.5">Holding</th>
             <th className="font-medium pb-1.5">Chance of a {fallSize}+ fall</th>
             <th className="font-medium pb-1.5 text-right">Downside, 1 in 20</th>
@@ -369,7 +369,7 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
             <tr key={row.name} className="border-t border-groww-border-light align-top">
               <td className="py-2 pr-2">
                 <span className="font-semibold text-groww-text-primary">{row.name}</span>
-                <span className="block text-[11px] text-groww-text-muted">{percent(row.weight)} of portfolio</span>
+                <span className="block text-xs text-groww-text-muted">{percent(row.weight)} of portfolio</span>
               </td>
               <td className="py-2 pr-2 w-[104px]">
                 <span className="flex items-center gap-2">
@@ -382,7 +382,7 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
                   <span className="w-8 text-right font-semibold text-groww-text-primary">{percent(row.fall)}</span>
                 </span>
                 {row.elevated && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
                     <IconTriangleUp className="w-2.5 h-2.5 shrink-0" />
                     <span>Elevated</span>
                   </span>
@@ -390,7 +390,7 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
               </td>
               <td className="py-2 text-right whitespace-nowrap">
                 <span className="font-semibold text-groww-text-primary">{inr(row.downside_amount)}</span>
-                <span className="block text-[11px] text-groww-text-muted">
+                <span className="block text-xs text-groww-text-muted">
                   −{percent(row.downside, 1)} · usual −{percent(row.usual_downside, 1)}
                 </span>
               </td>
@@ -407,10 +407,10 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
           </p>
           {model.sources && (
             <div id="source-comparison" className="rounded-xl bg-groww-bg-primary px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Accuracy by data used (AUC)</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">Accuracy by data used (AUC)</p>
               <ul className="mt-1.5 flex flex-col gap-1">
                 {Object.entries(model.sources.auc).map(([label, score]) => (
-                  <li key={label} className="flex items-center gap-2 text-[11px]">
+                  <li key={label} className="flex items-center gap-2 text-xs">
                     <span className="min-w-0 flex-1 truncate text-groww-text-secondary" title={label}>{label}</span>
                     <span className="w-16 h-1.5 rounded-full bg-white overflow-hidden" aria-hidden>
                       <span className="block h-full rounded-full bg-groww-green" style={{ width: `${Math.max(0, (score.auc - 0.4) / 0.3) * 100}%` }} />
@@ -419,7 +419,7 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
                   </li>
                 ))}
               </ul>
-              <p className="mt-1.5 text-[11px] text-groww-text-muted leading-relaxed">
+              <p className="mt-1.5 text-xs text-groww-text-muted leading-relaxed">
                 {model.sources.gains.filter((gain) => gain.clear).length > 0
                   ? `Clearly better than ${model.sources.gains.filter((gain) => gain.clear).map((gain) => gain.from).join(' and ')}.`
                   : 'No source is clearly better than another.'}{' '}
@@ -427,7 +427,7 @@ const RiskForecast: React.FC<{ ranking: HoldingRisk[]; model: RiskModel | null }
               </p>
             </div>
           )}
-          <p className="text-[11px] text-groww-text-muted">
+          <p className="text-xs text-groww-text-muted">
             {model.name} · tested {model.tested_on.replace(' to ', ' – ')} · downside is the loss one week in twenty should exceed.
           </p>
         </div>
@@ -629,7 +629,7 @@ const NotificationBell: React.FC = () => {
         {unseen > 0 && (
           <span
             id="alerts-badge"
-            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center"
+            className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center"
           >
             {unseen}
           </span>
@@ -644,7 +644,7 @@ const NotificationBell: React.FC = () => {
         >
           <header className="px-4 py-3 border-b border-groww-border-light">
             <h2 className="text-sm font-bold text-groww-text-primary">Alerts</h2>
-            <p className="text-[11px] text-groww-text-muted mt-0.5">
+            <p className="text-xs text-groww-text-muted mt-0.5">
               {result?.prices_as_of
                 ? `From prices of ${new Date(result.prices_as_of).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}, checked ${new Date(result.generated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
                 : loading
@@ -653,18 +653,18 @@ const NotificationBell: React.FC = () => {
               {failed && result && ' · last refresh failed'}
             </p>
             {result?.portfolio_source === 'sample' && (
-              <p className="text-[11px] text-amber-700 mt-1">
+              <p className="text-xs text-amber-700 mt-1">
                 No holdings saved yet, so these alerts are for the sample portfolio.
               </p>
             )}
             {drills.length > 0 && (
-              <label className="mt-2 flex items-center gap-2 text-[11px] text-groww-text-secondary">
+              <label className="mt-2 flex items-center gap-2 text-xs text-groww-text-secondary">
                 Rehearse a response
                 <select
                   id="alerts-drill"
                   value={scenario}
                   onChange={(e) => setScenario(e.target.value)}
-                  className="flex-1 min-w-0 rounded-lg border border-groww-border bg-white px-2 py-1 text-[11px] text-groww-text-primary outline-none focus:border-groww-green"
+                  className="flex-1 min-w-0 rounded-lg border border-groww-border bg-white px-2 py-1 text-xs text-groww-text-primary outline-none focus:border-groww-green"
                 >
                   <option value="">No drill (live signals only)</option>
                   {drills.map((drill) => (
@@ -734,13 +734,13 @@ const NotificationBell: React.FC = () => {
               </ul>
             )}
             {result && result.unavailable.length > 0 && (
-              <p className="px-4 py-2 text-[11px] text-amber-700 bg-amber-50">
+              <p className="px-4 py-2 text-xs text-amber-700 bg-amber-50">
                 Some checks could not run: {result.unavailable.join(', ')}.
               </p>
             )}
           </div>
 
-          <footer className="px-4 py-2.5 border-t border-groww-border-light bg-groww-bg-primary flex items-center justify-between gap-3 text-[11px] text-groww-text-muted">
+          <footer className="px-4 py-2.5 border-t border-groww-border-light bg-groww-bg-primary flex items-center justify-between gap-3 text-xs text-groww-text-muted">
             <span>
               {result?.risk_model
                 ? `${result.risk_model.name}, AUC ${result.risk_model.auc} on ${result.risk_model.tested_on.replace(' to ', ' – ')}`

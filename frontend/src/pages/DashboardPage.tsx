@@ -667,7 +667,7 @@ const DashboardPage: React.FC = () => {
                 <span id="dashboard-nifty" className="text-groww-text-primary font-bold flex items-center gap-1.5">
                   {fmtNum(nifty.value)}
                   <span
-                    className={`text-[10px] px-1 rounded ${nifty.change_1d_pct >= 0 ? 'bg-emerald-100/70 text-groww-green' : 'bg-red-50 text-red-500'}`}
+                    className={`text-[11px] px-1 rounded ${nifty.change_1d_pct >= 0 ? 'bg-emerald-100/70 text-groww-green' : 'bg-red-50 text-red-500'}`}
                   >
                     {fmtPct(nifty.change_1d_pct)}
                   </span>
@@ -712,8 +712,118 @@ const DashboardPage: React.FC = () => {
 
         {/* ── Dashboard Body Grid (Matching Reference Wireframe Layout) ────── */}
         <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto flex flex-col gap-6">
-          {/* Risk first: what could be lost, where exposure sits, and active alerts summary */}
+          {/* The page opens with the person and the market, then the four numbers that matter */}
+          {/* ── 1. WELCOME MESSAGE CARD ───────────────────────────────── */}
+          <section
+            id="welcome-card"
+            className="relative overflow-hidden rounded-2xl sm:rounded-3xl p-6 sm:p-7 border border-emerald-100/80 transition-all duration-300"
+            style={{
+              background: 'linear-gradient(135deg, #FFFFFF 0%, #F5FCF9 60%, #EBF8F4 100%)',
+              boxShadow: '0 4px 20px -2px rgba(0, 179, 134, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.02)',
+            }}
+          >
+            {/* Decorative background shapes */}
+            <div
+              className="absolute -right-8 -top-8 w-40 h-40 rounded-full pointer-events-none opacity-40 blur-2xl"
+              style={{ background: 'radial-gradient(circle, #00B386 0%, transparent 70%)' }}
+            />
+
+            <div className="relative z-10">
+              {/* Top Badge & Time */}
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100/70 text-groww-green-dark border border-emerald-200/60">
+                  <IconSparkle />
+                  Market today
+                </span>
+                <span className="text-xs text-groww-text-muted hidden sm:inline-flex items-center gap-1">
+                  <IconClock />
+                  {market?.as_of
+                    ? `Index close of ${new Date(market.as_of).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                    : `Market data ${marketPending.toLowerCase()}`}
+                </span>
+              </div>
+
+              {/* Main Greeting */}
+              <h2 className="text-xl sm:text-2xl font-extrabold text-groww-text-primary tracking-tight">
+                {greeting}, <span className="text-groww-green capitalize">{displayName}</span>
+              </h2>
+
+              {/* Market Quick Metrics Banner */}
+              <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-emerald-100/70">
+                <div className="p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
+                  <p className="text-xs font-semibold text-groww-text-muted uppercase tracking-wider">Nifty 50</p>
+                  <p className="text-sm font-bold text-groww-text-primary mt-0.5">{nifty ? fmtNum(nifty.value) : '—'}</p>
+                  {nifty ? (
+                    <span className={`text-xs font-semibold mt-0.5 inline-flex items-center gap-1 ${nifty.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
+                      {nifty.change_1d_pct >= 0 ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
+                      <span>{fmtPct(nifty.change_1d_pct)} on the day</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
+                  )}
+                </div>
+
+                <div className="p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
+                  <p className="text-xs font-semibold text-groww-text-muted uppercase tracking-wider">BSE Sensex</p>
+                  <p className="text-sm font-bold text-groww-text-primary mt-0.5">{sensex ? fmtNum(sensex.value) : '—'}</p>
+                  {sensex ? (
+                    <span className={`text-xs font-semibold mt-0.5 inline-flex items-center gap-1 ${sensex.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
+                      {sensex.change_1d_pct >= 0 ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
+                      <span>{fmtPct(sensex.change_1d_pct)} on the day</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
+                  )}
+                </div>
+
+                <div className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
+                  <p className="text-xs font-semibold text-groww-text-muted uppercase tracking-wider">Market Trend</p>
+                  <p
+                    id="dashboard-market-trend"
+                    className={`text-sm font-bold mt-0.5 ${
+                      market?.trend?.label === 'Uptrend'
+                        ? 'text-groww-green-dark'
+                        : market?.trend?.label === 'Downtrend'
+                          ? 'text-red-600'
+                          : 'text-groww-text-primary'
+                    }`}
+                  >
+                    {market?.trend?.label ?? '—'}
+                  </p>
+                  <span className="text-xs text-groww-text-secondary mt-0.5 block truncate">
+                    {market?.trend?.detail ?? marketPending}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <button
+                  id="welcome-view-portfolio-btn"
+                  onClick={() => navigate('/portfolio')}
+                  className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white flex items-center gap-2 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 shadow-sm"
+                  style={{ background: 'linear-gradient(135deg, #00B386 0%, #007A5A 100%)' }}
+                >
+                  <span>Explore Portfolio Details</span>
+                  <IconArrowRight />
+                </button>
+
+                <button
+                  id="welcome-upload-statement-btn"
+                  onClick={() => navigate('/portfolio')}
+                  className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-groww-text-primary bg-white border border-groww-border hover:border-groww-green hover:text-groww-green transition-all duration-200 flex items-center gap-2"
+                >
+                  <IconUpload />
+                  <span>Upload Statement PDF</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
           <RiskOverviewTiles backendUrl={backendUrl} refreshKey={refreshKey} />
+
+          {/* What to do about it */}
+          <RiskAlertList />
 
           {/* Interactive price and weather chart beside the risk exposure breakdown */}
           <MarketRiskRow backendUrl={backendUrl} refreshKey={refreshKey} />
@@ -729,116 +839,6 @@ const DashboardPage: React.FC = () => {
                ════════════════════════════════════════════════════════════════ */}
             <div className="lg:col-span-7 flex flex-col gap-6">
 
-              {/* ── 0. WHAT NEEDS ATTENTION (Alerts) ───────────────────────── */}
-              <RiskAlertList />
-
-              {/* ── 1. WELCOME MESSAGE CARD ───────────────────────────────── */}
-              <section
-                id="welcome-card"
-                className="relative overflow-hidden rounded-2xl sm:rounded-3xl p-6 sm:p-7 border border-emerald-100/80 transition-all duration-300"
-                style={{
-                  background: 'linear-gradient(135deg, #FFFFFF 0%, #F5FCF9 60%, #EBF8F4 100%)',
-                  boxShadow: '0 4px 20px -2px rgba(0, 179, 134, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.02)',
-                }}
-              >
-                {/* Decorative background shapes */}
-                <div
-                  className="absolute -right-8 -top-8 w-40 h-40 rounded-full pointer-events-none opacity-40 blur-2xl"
-                  style={{ background: 'radial-gradient(circle, #00B386 0%, transparent 70%)' }}
-                />
-
-                <div className="relative z-10">
-                  {/* Top Badge & Time */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100/70 text-groww-green-dark border border-emerald-200/60">
-                      <IconSparkle />
-                      Market today
-                    </span>
-                    <span className="text-xs text-groww-text-muted hidden sm:inline-flex items-center gap-1">
-                      <IconClock />
-                      {market?.as_of
-                        ? `Index close of ${new Date(market.as_of).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                        : `Market data ${marketPending.toLowerCase()}`}
-                    </span>
-                  </div>
-
-                  {/* Main Greeting */}
-                  <h2 className="text-xl sm:text-2xl font-extrabold text-groww-text-primary tracking-tight">
-                    {greeting}, <span className="text-groww-green capitalize">{displayName}</span>
-                  </h2>
-
-                  {/* Market Quick Metrics Banner */}
-                  <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-emerald-100/70">
-                    <div className="p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
-                      <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">Nifty 50</p>
-                      <p className="text-sm font-bold text-groww-text-primary mt-0.5">{nifty ? fmtNum(nifty.value) : '—'}</p>
-                      {nifty ? (
-                        <span className={`text-xs font-semibold mt-0.5 inline-flex items-center gap-1 ${nifty.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
-                          {nifty.change_1d_pct >= 0 ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
-                          <span>{fmtPct(nifty.change_1d_pct)} on the day</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
-                      )}
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
-                      <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">BSE Sensex</p>
-                      <p className="text-sm font-bold text-groww-text-primary mt-0.5">{sensex ? fmtNum(sensex.value) : '—'}</p>
-                      {sensex ? (
-                        <span className={`text-xs font-semibold mt-0.5 inline-flex items-center gap-1 ${sensex.change_1d_pct >= 0 ? 'text-groww-green' : 'text-red-500'}`}>
-                          {sensex.change_1d_pct >= 0 ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
-                          <span>{fmtPct(sensex.change_1d_pct)} on the day</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs text-groww-text-muted mt-0.5 block">{marketPending}</span>
-                      )}
-                    </div>
-
-                    <div className="col-span-2 sm:col-span-1 p-3 rounded-xl bg-white/80 border border-emerald-50 shadow-sm">
-                      <p className="text-[11px] font-semibold text-groww-text-muted uppercase tracking-wider">Market Trend</p>
-                      <p
-                        id="dashboard-market-trend"
-                        className={`text-sm font-bold mt-0.5 ${
-                          market?.trend?.label === 'Uptrend'
-                            ? 'text-groww-green-dark'
-                            : market?.trend?.label === 'Downtrend'
-                              ? 'text-red-600'
-                              : 'text-groww-text-primary'
-                        }`}
-                      >
-                        {market?.trend?.label ?? '—'}
-                      </p>
-                      <span className="text-xs text-groww-text-secondary mt-0.5 block truncate">
-                        {market?.trend?.detail ?? marketPending}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="mt-5 flex flex-wrap items-center gap-3">
-                    <button
-                      id="welcome-view-portfolio-btn"
-                      onClick={() => navigate('/portfolio')}
-                      className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-white flex items-center gap-2 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 shadow-sm"
-                      style={{ background: 'linear-gradient(135deg, #00B386 0%, #007A5A 100%)' }}
-                    >
-                      <span>Explore Portfolio Details</span>
-                      <IconArrowRight />
-                    </button>
-
-                    <button
-                      id="welcome-upload-statement-btn"
-                      onClick={() => navigate('/portfolio')}
-                      className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-groww-text-primary bg-white border border-groww-border hover:border-groww-green hover:text-groww-green transition-all duration-200 flex items-center gap-2"
-                    >
-                      <IconUpload />
-                      <span>Upload Statement PDF</span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-
               {/* ── 2. NEWS TRAIL CARD (headlines about the sectors the user holds) ── */}
               <section
                 id="news-trail-card"
@@ -849,7 +849,7 @@ const DashboardPage: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold text-groww-text-primary tracking-tight">Market News Trail</h3>
-                      <span id="news-scope" className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700">
+                      <span id="news-scope" className="px-2 py-0.5 rounded-md text-xs font-semibold bg-gray-100 text-gray-700">
                         {newsScope?.source === 'sample' ? 'Sample portfolio' : 'Your sectors'}
                       </span>
                     </div>
@@ -908,7 +908,7 @@ const DashboardPage: React.FC = () => {
                 </div>
                 {/* Why each sector is here: the holdings behind it */}
                 {newsScope && newsScope.sectors.length > 0 && (
-                  <p id="news-sector-basis" className="pb-2 text-[11px] text-groww-text-muted leading-relaxed">
+                  <p id="news-sector-basis" className="pb-2 text-xs text-groww-text-muted leading-relaxed">
                     {(activeNewsFilter === 'ALL'
                       ? newsScope.sectors
                       : newsScope.sectors.filter((entry) => entry.sector === activeNewsFilter)
@@ -978,18 +978,18 @@ const DashboardPage: React.FC = () => {
                         <div className="flex-1 min-w-0">
                           {/* Metadata row */}
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-groww-green-dark border border-emerald-100">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-groww-green-dark border border-emerald-100">
                               {item.source || 'News'}
                             </span>
-                            <span className="text-[11px] font-semibold text-groww-text-secondary">
+                            <span className="text-xs font-semibold text-groww-text-secondary">
                               {item.sectors.join(', ')}
                             </span>
                             {item.holdings.length > 0 && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                              <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
                                 Names {item.holdings.join(', ')}
                               </span>
                             )}
-                            <span className="text-[11px] text-groww-text-muted flex items-center gap-1 ml-auto">
+                            <span className="text-xs text-groww-text-muted flex items-center gap-1 ml-auto">
                               <IconClock />
                               {timeAgo(item.published_at)}
                             </span>
@@ -1037,9 +1037,6 @@ const DashboardPage: React.FC = () => {
                ════════════════════════════════════════════════════════════════ */}
             <div className="lg:col-span-5 flex flex-col gap-6">
 
-              {/* ── DATA STREAMS STATUS ──────────────────────────────────── */}
-              <RiskStreamsCard backendUrl={backendUrl} />
-
               <section
                 id="personal-portfolio-card"
                 className="bg-white rounded-2xl sm:rounded-3xl border border-groww-border-light shadow-card p-6 flex flex-col transition-all duration-200"
@@ -1077,7 +1074,7 @@ const DashboardPage: React.FC = () => {
                       Account: <strong className="text-groww-text-primary">{userEmail}</strong>
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-emerald-100 text-groww-green-dark shrink-0">
+                  <span className="px-2 py-0.5 rounded font-bold text-[11px] bg-emerald-100 text-groww-green-dark shrink-0">
                     {portfolioStats.isCustom ? 'Verified Active' : 'Sample Model'}
                   </span>
                 </div>
@@ -1104,7 +1101,7 @@ const DashboardPage: React.FC = () => {
                       <p className="text-base sm:text-lg font-extrabold text-groww-text-primary tracking-tight">
                         {shown(fmtCur(portfolioStats.totalInvested))}
                       </p>
-                      <p className="text-[11px] text-groww-text-muted mt-1">
+                      <p className="text-xs text-groww-text-muted mt-1">
                         Principal capital
                       </p>
                     </div>
@@ -1127,7 +1124,7 @@ const DashboardPage: React.FC = () => {
                       <p className="text-base sm:text-lg font-extrabold text-groww-text-primary tracking-tight">
                         {shown(`${portfolioStats.totalStocks} ${portfolioStats.totalStocks === 1 ? 'Asset' : 'Assets'}`)}
                       </p>
-                      <p className="text-[11px] text-groww-text-muted mt-1">
+                      <p className="text-xs text-groww-text-muted mt-1">
                         Active holdings
                       </p>
                     </div>
@@ -1151,7 +1148,7 @@ const DashboardPage: React.FC = () => {
                         }`}>
                         {shown(fmtPct(portfolioStats.totalProfitPercent))}
                       </p>
-                      <p className="text-[11px] text-groww-text-muted mt-1">
+                      <p className="text-xs text-groww-text-muted mt-1">
                         Total return rate (ROI)
                       </p>
                     </div>
@@ -1175,7 +1172,7 @@ const DashboardPage: React.FC = () => {
                         }`}>
                         {shown(`${portfolioStats.totalProfitAmount >= 0 ? '+' : ''}${fmtCur(portfolioStats.totalProfitAmount)}`)}
                       </p>
-                      <p className="text-[11px] text-groww-text-muted mt-1">
+                      <p className="text-xs text-groww-text-muted mt-1">
                         Unrealized profit
                       </p>
                     </div>
@@ -1198,7 +1195,7 @@ const DashboardPage: React.FC = () => {
                       <p className="text-base sm:text-lg font-extrabold text-groww-text-primary tracking-tight">
                         {shown(fmtCur(portfolioStats.totalCurrent))}
                       </p>
-                      <p className="text-[11px] text-groww-text-muted mt-1">
+                      <p className="text-xs text-groww-text-muted mt-1">
                         Live market valuation
                       </p>
                     </div>
@@ -1226,7 +1223,7 @@ const DashboardPage: React.FC = () => {
                       >
                         {portfolioStats.health?.label ?? '—'}
                       </p>
-                      <p className="text-[11px] text-groww-text-muted mt-1">
+                      <p className="text-xs text-groww-text-muted mt-1">
                         {portfolioStats.health?.detail ?? 'Needs priced holdings'}
                       </p>
                     </div>
@@ -1234,7 +1231,7 @@ const DashboardPage: React.FC = () => {
                 </div>
 
                 {portfolioStats.unpricedCount > 0 && (
-                  <p id="dashboard-unpriced-note" className="mt-3 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-[11px] text-groww-text-secondary">
+                  <p id="dashboard-unpriced-note" className="mt-3 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100 text-xs text-groww-text-secondary">
                     {portfolioStats.unpricedCount} holding{portfolioStats.unpricedCount !== 1 ? 's have' : ' has'} no market
                     price and {portfolioStats.unpricedCount !== 1 ? 'are' : 'is'} counted at cost in the current value.
                   </p>
@@ -1246,7 +1243,7 @@ const DashboardPage: React.FC = () => {
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-bold text-groww-text-primary tracking-tight">Holdings Breakdown</h4>
                       {historyLoading && (
-                        <span className="text-[10px] text-groww-text-muted flex items-center gap-1">
+                        <span className="text-[11px] text-groww-text-muted flex items-center gap-1">
                           <span className="w-3 h-3 border border-groww-green/30 border-t-groww-green rounded-full animate-spin inline-block" />
                           Updating charts…
                         </span>
@@ -1257,14 +1254,14 @@ const DashboardPage: React.FC = () => {
                       <table className="w-full text-xs" style={{ borderCollapse: 'separate', borderSpacing: '0 6px', minWidth: 560 }}>
                         <thead>
                           <tr>
-                            <th className="pl-2 pr-3 pb-1 text-left font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Stock</th>
-                            <th className="px-2 pb-1 text-left font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Type</th>
-                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Units</th>
-                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Buy Price</th>
-                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Live Rate</th>
-                            <th className="px-2 pb-1 text-center font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">30d Trend</th>
-                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">Invested</th>
-                            <th className="pr-2 pb-1 text-right font-semibold text-groww-text-muted text-[11px] uppercase tracking-wide">P&amp;L</th>
+                            <th className="pl-2 pr-3 pb-1 text-left font-semibold text-groww-text-muted text-xs uppercase tracking-wide">Stock</th>
+                            <th className="px-2 pb-1 text-left font-semibold text-groww-text-muted text-xs uppercase tracking-wide">Type</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-xs uppercase tracking-wide">Units</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-xs uppercase tracking-wide">Buy Price</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-xs uppercase tracking-wide">Live Rate</th>
+                            <th className="px-2 pb-1 text-center font-semibold text-groww-text-muted text-xs uppercase tracking-wide">30d Trend</th>
+                            <th className="px-2 pb-1 text-right font-semibold text-groww-text-muted text-xs uppercase tracking-wide">Invested</th>
+                            <th className="pr-2 pb-1 text-right font-semibold text-groww-text-muted text-xs uppercase tracking-wide">P&amp;L</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1302,7 +1299,7 @@ const DashboardPage: React.FC = () => {
                                 <td className="pl-2 pr-3 py-2.5" style={{ borderRadius: '12px 0 0 12px' }}>
                                   <div className="flex items-center gap-2.5 min-w-0">
                                     <div
-                                      className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white font-bold text-[11px] tracking-wide shadow-sm"
+                                      className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-white font-bold text-xs tracking-wide shadow-sm"
                                       style={{ background: avatarGrad }}
                                     >
                                       {initials}
@@ -1311,7 +1308,7 @@ const DashboardPage: React.FC = () => {
                                       <p className="font-bold text-groww-text-primary text-[12px] leading-tight truncate max-w-[100px]" title={row.name}>
                                         {row.name}
                                       </p>
-                                      <p className="text-[10px] text-groww-text-muted font-medium tracking-wide">{row.symbol || '—'}</p>
+                                      <p className="text-[11px] text-groww-text-muted font-medium tracking-wide">{row.symbol || '—'}</p>
                                     </div>
                                   </div>
                                 </td>
@@ -1319,7 +1316,7 @@ const DashboardPage: React.FC = () => {
                                 {/* Type badge */}
                                 <td className="px-2 py-2.5">
                                   <span
-                                    className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                                    className="px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider"
                                     style={{ background: ts.bg, color: ts.color, border: `1px solid ${ts.border}` }}
                                   >
                                     {row.type}
@@ -1367,7 +1364,7 @@ const DashboardPage: React.FC = () => {
                                       <span className={`font-bold text-[12px] ${isUp ? 'text-groww-green' : 'text-red-500'}`}>
                                         {pnlAmt >= 0 ? '+' : ''}{fmtCur(pnlAmt)}
                                       </span>
-                                      <span className={`flex items-center justify-end gap-0.5 text-[10px] font-semibold mt-0.5 ${isUp ? 'text-groww-green' : 'text-red-500'}`}>
+                                      <span className={`flex items-center justify-end gap-0.5 text-[11px] font-semibold mt-0.5 ${isUp ? 'text-groww-green' : 'text-red-500'}`}>
                                         <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
                                           {isUp
                                             ? <polygon points="4,1 7,7 1,7" />
@@ -1415,7 +1412,7 @@ const DashboardPage: React.FC = () => {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] text-groww-text-muted mt-2">
+                  <div className="flex items-center justify-between text-xs text-groww-text-muted mt-2">
                     <span className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-groww-green inline-block" />
                       Invested ({shown(fmtCur(portfolioStats.totalInvested))})
@@ -1454,6 +1451,9 @@ const DashboardPage: React.FC = () => {
             </div>
 
           </div>
+
+          {/* Where the data comes from, and whether each feed is up */}
+          <RiskStreamsCard backendUrl={backendUrl} />
         </div>
       </main>
     </div>

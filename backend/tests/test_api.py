@@ -246,3 +246,10 @@ def test_an_unhandled_error_is_a_json_500_with_cors_headers(monkeypatch):
     assert response.status_code == 500
     assert response.json() == {"detail": "The server hit an error handling this request."}
     assert response.headers["access-control-allow-origin"] == "https://codeutasva-x.vercel.app"
+
+
+def test_prices_accepts_a_holding_saved_without_an_isin(monkeypatch):
+    from app import api
+
+    ref = api.HoldingRef(key=1, symbol="TATASTEEL", isin=None, name=None)
+    assert (ref.key, ref.isin, ref.name) == ("1", "", "")

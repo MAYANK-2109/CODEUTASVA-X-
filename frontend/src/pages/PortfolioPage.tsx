@@ -316,7 +316,7 @@ function UploadModal({ onClose, onAdd, userId }: UploadModalProps) {
           {STEPS.map((s, i) => (
             <React.Fragment key={s}>
               <div className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${step === s ? 'text-groww-green' : i < STEPS.indexOf(step) ? 'text-groww-green/60' : 'text-gray-400'}`}>
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step === s ? 'bg-groww-green text-white' : i < STEPS.indexOf(step) ? 'bg-groww-green/20 text-groww-green' : 'bg-gray-100 text-gray-400'}`}>
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${step === s ? 'bg-groww-green text-white' : i < STEPS.indexOf(step) ? 'bg-groww-green/20 text-groww-green' : 'bg-gray-100 text-gray-400'}`}>
                   {i + 1}
                 </div>
                 <span className="capitalize">{s}</span>
@@ -931,7 +931,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                           </div>
                         </td>
                         <td className="px-4 py-3.5">
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide ${TYPE_COLOURS[h.type] || 'bg-gray-100 text-gray-600'}`}>
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[11px] font-bold tracking-wide ${TYPE_COLOURS[h.type] || 'bg-gray-100 text-gray-600'}`}>
                             {h.type}
                           </span>
                         </td>
@@ -943,14 +943,14 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                               <span className="text-sm font-medium text-gray-800 tabular-nums">{fmtCur(h.current_price)}</span>
                               {isLive(h) ? (
                                 <span
-                                  className="flex items-center gap-1 text-[10px] font-medium text-groww-green"
+                                  className="flex items-center gap-1 text-[11px] font-medium text-groww-green"
                                   title={`Latest market price for ${liveTickers[priceKey(h)] ?? 'this holding'}`}
                                 >
                                   <span className="w-1.5 h-1.5 rounded-full bg-groww-green" />
                                   Live &middot; {(liveTickers[priceKey(h)] ?? '').replace(/\.(NS|BO)$/, '')}
                                 </span>
                               ) : (
-                                <span className="text-[10px] text-gray-400" title="No market price found for this holding; showing the price saved with it">Saved</span>
+                                <span className="text-[11px] text-gray-400" title="No market price found for this holding; showing the price saved with it">Saved</span>
                               )}
                             </div>
                           ) : <span className="text-xs text-gray-400 italic" title="No market price was found for this holding">No price</span>}
@@ -970,7 +970,7 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
                           {pnl != null ? (
                             <div className={`flex flex-col items-end ${isProfit ? 'text-green-600' : 'text-red-500'}`}>
                               <span className="text-sm font-semibold tabular-nums">{isProfit ? '+' : ''}{fmtCur(pnl)}</span>
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium tabular-nums opacity-80">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium tabular-nums opacity-80">
                                 {isProfit ? <IconTriangleUp className="w-2 h-2 shrink-0" /> : <IconTriangleDown className="w-2 h-2 shrink-0" />}
                                 <span>{Math.abs(pnlP ?? 0).toFixed(2)}%</span>
                               </span>

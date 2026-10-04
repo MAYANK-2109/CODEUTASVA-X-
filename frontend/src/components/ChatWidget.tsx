@@ -141,7 +141,7 @@ const Inline: React.FC<{ text: string; onCite: (id: string) => void; active: str
             <button
               key={`${i}-${id}`}
               onClick={() => onCite(id)}
-              className={`mx-0.5 px-1.5 rounded text-[10px] font-semibold align-middle transition-colors duration-150 ${
+              className={`mx-0.5 px-1.5 rounded text-[11px] font-semibold align-middle transition-colors duration-150 ${
                 active === id
                   ? 'bg-groww-green text-white'
                   : 'bg-groww-green-light text-groww-green hover:bg-groww-green hover:text-white'
@@ -186,7 +186,7 @@ const ForecastGroup: React.FC<{
   const shown = all ? rows : rows.slice(0, FORECAST_ROWS)
   return (
     <div>
-      <p className="flex items-center gap-1 text-[11px] font-semibold text-groww-text-secondary">
+      <p className="flex items-center gap-1 text-xs font-semibold text-groww-text-secondary">
         {title}
         {evidenceId && <Inline text={`[${evidenceId}]`} onCite={onCite} active={active} />}
       </p>
@@ -196,7 +196,7 @@ const ForecastGroup: React.FC<{
           return (
             <li
               key={row.label}
-              className="flex items-center gap-2 text-[11px] tabular-nums"
+              className="flex items-center gap-2 text-xs tabular-nums"
               title={`${row.label}: average ${signedPct(row.mean)} over ${horizon} sessions${
                 row.amount === undefined ? '' : ` (${signedInr(row.amount)})`
               }; lowest ${signedPct(row.min)}, highest ${signedPct(row.max)} across ${row.n} past event${row.n === 1 ? '' : 's'}`}
@@ -237,7 +237,7 @@ const ForecastGroup: React.FC<{
         })}
       </ul>
       {rows.length > FORECAST_ROWS && (
-        <button onClick={() => setAll((v) => !v)} className="mt-1 text-[11px] text-groww-green hover:underline">
+        <button onClick={() => setAll((v) => !v)} className="mt-1 text-xs text-groww-green hover:underline">
           {all ? 'Show fewer' : `Show all ${rows.length}`}
         </button>
       )}
@@ -259,11 +259,11 @@ const ForecastCard: React.FC<{ forecast: Forecast; onCite: (id: string) => void;
     <div id="chat-forecast" className="viz-root mt-3 rounded-xl border border-groww-border px-3 py-2.5 flex flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-xs font-bold text-groww-text-primary">Forecast · next {forecast.horizon_sessions} sessions</p>
-        <p className="text-[11px] text-groww-text-muted">
+        <p className="text-xs text-groww-text-muted">
           average of {forecast.events} past event{plural}
         </p>
       </div>
-      <p className="text-[11px] text-groww-text-secondary -mt-1.5">
+      <p className="text-xs text-groww-text-secondary -mt-1.5">
         Portfolio {signedPct(forecast.portfolio.mean)} ({signedInr(forecast.portfolio.pnl)}); past cases ranged from{' '}
         {signedPct(forecast.portfolio.worst)} to {signedPct(forecast.portfolio.best)}
         <Inline text={`[${forecast.portfolio.evidence}]`} onCite={onCite} active={active} />
@@ -288,11 +288,10 @@ const ForecastCard: React.FC<{ forecast: Forecast; onCite: (id: string) => void;
           active={active}
         />
       ) : (
-        <p className="text-[11px] text-groww-text-muted">Commodity prices were unavailable, so there is no commodity forecast.</p>
+        <p className="text-xs text-groww-text-muted">Commodity prices were unavailable, so there is no commodity forecast.</p>
       )}
-      <p className="text-[10px] text-groww-text-muted leading-snug">
-        Bar: average move after the past events. Line: lowest to highest, with an arrow where it runs past
-        the scale. A small sample, so read it as a range, not a prediction. A rise in USD/INR is a weaker rupee.
+      <p className="text-[11px] text-groww-text-muted leading-snug">
+        Bar: average move in past events · line: lowest to highest. A small sample: a range, not a prediction.
       </p>
     </div>
   )
@@ -337,10 +336,10 @@ const PipelineView: React.FC<{ steps: Record<string, Step>; finished: boolean }>
                   ) : (
                     <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
                   )}
-                  <span className="text-[11px] font-semibold text-groww-text-primary truncate">{agent.label}</span>
-                  {step && <span className="ml-auto text-[10px] text-groww-text-muted shrink-0">{step.ms} ms</span>}
+                  <span className="text-xs font-semibold text-groww-text-primary truncate">{agent.label}</span>
+                  {step && <span className="ml-auto text-[11px] text-groww-text-muted shrink-0">{step.ms} ms</span>}
                 </div>
-                {step && <p className="text-[11px] text-groww-text-secondary mt-0.5 leading-snug">{step.summary}</p>}
+                {step && <p className="text-xs text-groww-text-secondary mt-0.5 leading-snug">{step.summary}</p>}
               </div>
             )
           })}
@@ -353,9 +352,13 @@ const PipelineView: React.FC<{ steps: Record<string, Step>; finished: boolean }>
 // ---------------------------------------------------------------------------
 // One assistant reply
 // ---------------------------------------------------------------------------
+const BRIEF_LINES = 4   // lines of an answer shown before "Show the full breakdown"
+
 const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) => {
   const { answer, error, steps } = message
   const [showEvidence, setShowEvidence] = useState(false)
+  const [showAll, setShowAll] = useState(false)
+  const [showGaps, setShowGaps] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const finished = Boolean(answer || error)
@@ -363,6 +366,11 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
   const cite = (id: string) => setActiveId((current) => (current === id ? null : id))
   // Agents in the same row ran side by side, so a row takes as long as its slowest agent.
   const totalMs = PIPELINE.reduce((sum, row) => sum + Math.max(0, ...row.map((a) => steps[a.id]?.ms ?? 0)), 0)
+  // A long answer opens with its bottom line and first points; the rest is one tap away.
+  const lines = (answer?.text ?? '').split('\n').filter((line) => line.trim())
+  const firstSection = lines.findIndex((line) => line.startsWith('## '))
+  const brief = firstSection > 0 ? lines.slice(0, firstSection) : lines.slice(0, BRIEF_LINES)
+  const shownLines = showAll ? lines : brief
 
   return (
     <div className="flex flex-col gap-2 text-sm text-groww-text-primary">
@@ -373,16 +381,24 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
       {answer && (
         <div className="rounded-2xl rounded-tl-sm bg-white border border-groww-border-light px-3.5 py-3 shadow-card">
           <span
-            className={`inline-block mb-2 px-2 py-0.5 rounded-full text-[11px] font-semibold ${ACTION_LABELS[answer.action].className}`}
+            className={`inline-block mb-2 px-2 py-0.5 rounded-full text-xs font-semibold ${ACTION_LABELS[answer.action].className}`}
           >
             {ACTION_LABELS[answer.action].text}
           </span>
 
           <div className="flex flex-col gap-1.5 leading-relaxed">
-            {answer.text.split('\n').map((line, i) => {
+            {shownLines.map((line, i) => {
+              if (i === 0 && !line.startsWith('- ') && !line.startsWith('## ')) {
+                // The bottom line is the answer; everything after it is support.
+                return (
+                  <p key={i} className="text-[15px] font-semibold leading-snug">
+                    <Inline text={line.replace(/^\*\*Bottom line:\*\*\s*/i, '')} onCite={cite} active={activeId} />
+                  </p>
+                )
+              }
               if (line.startsWith('## ')) {
                 return (
-                  <h4 key={i} className="mt-2 text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">
+                  <h4 key={i} className="mt-2 text-xs font-bold uppercase tracking-wide text-groww-text-muted">
                     {line.slice(3)}
                   </h4>
                 )
@@ -398,14 +414,22 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
                 )
               }
               return (
-                line.trim() && (
-                  <p key={i}>
-                    <Inline text={line} onCite={cite} active={activeId} />
-                  </p>
-                )
+                <p key={i}>
+                  <Inline text={line} onCite={cite} active={activeId} />
+                </p>
               )
             })}
           </div>
+
+          {lines.length > shownLines.length || showAll ? (
+            <button
+              onClick={() => setShowAll((value) => !value)}
+              aria-expanded={showAll}
+              className="mt-2 text-xs font-bold text-groww-green hover:text-groww-green-dark"
+            >
+              {showAll ? 'Show less' : 'Show the full breakdown'}
+            </button>
+          ) : null}
 
           {active && (
             <div className="mt-3 rounded-xl bg-groww-green-pale border border-groww-green/30 px-3 py-2 text-xs">
@@ -415,19 +439,19 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
             </div>
           )}
 
-          {/* Why this was recommended, step by step; open by default */}
-          <div id="chat-trail" className="mt-3">
-            <EvidenceTrail trail={answer.trail} decision={answer.decision} evidence={answer.evidence} steps={steps} />
-          </div>
-
           {answer.forecast && <ForecastCard forecast={answer.forecast} onCite={cite} active={activeId} />}
+
+          {/* Why this was recommended, step by step: one tap away */}
+          <div id="chat-trail" className="mt-3">
+            <EvidenceTrail trail={answer.trail} decision={answer.decision} evidence={answer.evidence} steps={steps} defaultOpen={false} />
+          </div>
 
           {answer.hedges.length > 0 && (
             <div className="mt-3 flex flex-col gap-1.5">
               {answer.hedges.map((hedge, i) => (
                 <div key={i} className="rounded-xl border border-groww-border px-3 py-2 text-xs flex items-center gap-2">
                   <span
-                    className={`px-1.5 py-0.5 rounded font-semibold uppercase text-[10px] ${
+                    className={`px-1.5 py-0.5 rounded font-semibold uppercase text-[11px] ${
                       hedge.side === 'short' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'
                     }`}
                   >
@@ -442,14 +466,29 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
           )}
 
           {answer.gaps.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1 text-[11px] text-amber-700">
-              {answer.gaps.map((gap, i) => (
-                <li key={i} className="rounded-lg bg-amber-50 px-2.5 py-1.5">{gap}</li>
-              ))}
-            </ul>
+            <div className="mt-3 rounded-xl bg-amber-50 text-xs text-amber-800">
+              <button
+                onClick={() => setShowGaps((value) => !value)}
+                aria-expanded={showGaps}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 font-semibold text-left"
+              >
+                <span>{answer.gaps.length} thing{answer.gaps.length === 1 ? '' : 's'} to keep in mind</span>
+                <span>{showGaps ? 'Hide' : 'Show'}</span>
+              </button>
+              {showGaps && (
+                <ul className="px-3 pb-2.5 flex flex-col gap-1.5 leading-relaxed">
+                  {answer.gaps.map((gap, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="mt-[7px] w-1 h-1 rounded-full bg-amber-600 shrink-0" />
+                      <span>{gap}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
 
-          <div className="mt-3 pt-2 border-t border-groww-border-light flex items-center gap-3 text-[11px] text-groww-text-muted">
+          <div className="mt-3 pt-2 border-t border-groww-border-light flex items-center gap-3 text-xs text-groww-text-muted">
             <span>
               {Object.keys(steps).length} agents · {(totalMs / 1000).toFixed(1)}s
             </span>
@@ -460,7 +499,7 @@ const AssistantReply: React.FC<{ message: AssistantMessage }> = ({ message }) =>
           </div>
 
           {showEvidence && (
-            <ul className="mt-2 flex flex-col gap-1.5 text-[11px]">
+            <ul className="mt-2 flex flex-col gap-1.5 text-xs">
               {answer.evidence.map((item) => (
                 <li key={item.id} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
                   <span className="font-semibold text-groww-green">{item.id}</span> {item.claim}
@@ -579,7 +618,7 @@ const ChatWidget: React.FC = () => {
           >
             <div>
               <h2 className="text-sm font-bold">Portfolio Assistant</h2>
-              <p className="text-[11px] opacity-90">Multi-agent risk analysis with evidence</p>
+              <p className="text-xs opacity-90">Multi-agent risk analysis with evidence</p>
             </div>
             <button
               onClick={() => setOpen(false)}

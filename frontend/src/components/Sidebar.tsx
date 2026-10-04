@@ -95,7 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage: _activePage = 'dashboard'
   const userName = userEmail.split('@')[0]
 
   const tabClass = (active: boolean) =>
-    `flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors duration-150 ${
+    `flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition-colors duration-150 ${
       active ? 'text-groww-green' : 'text-groww-text-secondary'
     }`
 
@@ -130,7 +130,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage: _activePage = 'dashboard'
         className={tabClass(pathname === '/settings')}
       >
         <span
-          className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
+          className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[11px] font-bold"
           style={{ background: 'linear-gradient(135deg, #00B386, #007A5A)' }}
         >
           {userInitial}

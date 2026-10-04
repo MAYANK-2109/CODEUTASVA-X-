@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.ingestion.news import HOLDINGS_WINDOW_DAYS, get_sector_news
 from app.ingestion.prices import get_latest_prices
@@ -91,6 +91,13 @@ class HoldingRef(BaseModel):
     symbol: str = ""
     isin: str = ""
     name: str = ""
+
+    @field_validator("key", "symbol", "isin", "name", mode="before")
+    @classmethod
+    def blank_when_missing(cls, value):
+        """A holding saved without an ISIN arrives as null, and a row id may be a number;
+        one such row must not fail the whole request."""
+        return "" if value is None else str(value)
 
 
 class PricesRequest(BaseModel):

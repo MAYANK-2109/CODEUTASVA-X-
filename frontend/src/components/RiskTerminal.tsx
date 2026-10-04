@@ -91,20 +91,48 @@ function ago(iso: string | null): string | null {
   return `${Math.floor(seconds / 86400)} d ago`
 }
 
-const Tile: React.FC<{ id: string; label: string; value: string; note?: string; children?: React.ReactNode }> = ({
-  id,
-  label,
-  value,
-  note,
-  children,
-}) => (
-  <div id={id} className="min-w-0 rounded-2xl bg-white border border-groww-border-light shadow-card px-4 py-3.5">
-    <p className="text-[11px] font-semibold uppercase tracking-wider text-groww-text-muted">{label}</p>
-    <p className="mt-1 text-xl sm:text-2xl font-bold text-groww-text-primary tabular-nums truncate">{value}</p>
-    {note && <p className="mt-0.5 text-xs text-groww-text-secondary line-clamp-2">{note}</p>}
-    {children}
-  </div>
-)
+const TILE_ICONS: Record<string, React.ReactNode> = {
+  loss: <path d="M3 7l6 6 4-4 8 8M21 11v6h-6" />,
+  market: <path d="M3 12h4l3-8 4 16 3-8h4" />,
+  exposure: <><circle cx="12" cy="12" r="9" /><path d="M12 3v9l7 5" /></>,
+  alerts: <><path d="M6 9a6 6 0 1112 0c0 6 2.5 7 2.5 7h-17S6 15 6 9z" /><path d="M10 20a2 2 0 004 0" /></>,
+}
+
+const Tile: React.FC<{
+  id: string
+  icon: keyof typeof TILE_ICONS
+  tone: string
+  label: string
+  value: string
+  note?: string
+  hint?: string
+  onClick?: () => void
+  children?: React.ReactNode
+}> = ({ id, icon, tone, label, value, note, hint, onClick, children }) => {
+  const body = (
+    <>
+      <span className={`inline-flex w-10 h-10 rounded-xl items-center justify-center ${tone}`} aria-hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {TILE_ICONS[icon]}
+        </svg>
+      </span>
+      <p className="mt-4 text-sm font-medium text-groww-text-secondary">{label}</p>
+      <p className="mt-1 text-3xl font-bold text-groww-text-primary tabular-nums tracking-tight truncate">{value}</p>
+      {note && <p className="mt-1.5 text-sm text-groww-text-secondary line-clamp-2">{note}</p>}
+      {children}
+    </>
+  )
+  const className = 'min-w-0 rounded-2xl sm:rounded-3xl bg-white border border-groww-border-light shadow-card p-5 sm:p-6 text-left'
+  return onClick ? (
+    <button id={id} onClick={onClick} title={hint} className={`${className} hover:border-groww-green/50 transition-colors`}>
+      {body}
+    </button>
+  ) : (
+    <div id={id} title={hint} className={className}>
+      {body}
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // 1. Top Risk Summary Tiles
@@ -156,7 +184,7 @@ export const RiskOverviewTiles: React.FC<{ backendUrl: string; refreshKey?: numb
   return (
     <section id="risk-terminal" aria-label="Risk overview" className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-base font-bold text-groww-text-primary">Risk overview</h2>
+        <h2 className="text-lg font-bold text-groww-text-primary">Your risk at a glance</h2>
         <p className="text-xs text-groww-text-muted">
           {data
             ? `Closing prices of ${shortDate(data.as_of)}${data.price_source === 'cache' ? ' (saved copy, live feed unavailable)' : ''}${
@@ -168,83 +196,81 @@ export const RiskOverviewTiles: React.FC<{ backendUrl: string; refreshKey?: numb
         </p>
       </div>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
         <Tile
           id="risk-var"
-          label="1-day 95% VaR"
+          icon="loss"
+          tone="bg-red-50 text-red-500"
+          label="Could lose in a day"
           value={data ? (data.risk.var_1d === null ? '—' : inr(data.risk.var_1d)) : '—'}
           note={
             data
               ? data.risk.var_1d_pct === null
                 ? 'Not enough price history'
-                : `${pct(data.risk.var_1d_pct)} of ${inr(data.risk.total)}`
+                : `${pct(data.risk.var_1d_pct)} of your ${inr(data.risk.total)}`
               : pending
           }
-        >
-          {data?.risk.var_horizon != null && data.risk.cvar_1d != null && (
-            <p className="mt-2 pt-2 border-t border-groww-border-light text-[11px] text-groww-text-muted">
-              {data.risk.horizon_sessions}-day {inr(data.risk.var_horizon)} · expected shortfall {inr(data.risk.cvar_1d)}
-            </p>
-          )}
-        </Tile>
+          hint={
+            data?.risk.var_horizon != null && data.risk.cvar_1d != null
+              ? `1-day 95% value at risk. ${data.risk.horizon_sessions}-day: ${inr(data.risk.var_horizon)}. Expected shortfall: ${inr(data.risk.cvar_1d)}.`
+              : '1-day 95% value at risk'
+          }
+        />
 
         <Tile
           id="risk-beta"
-          label="Beta to Nifty 50"
-          value={data ? (data.risk.beta === null ? '—' : data.risk.beta.toFixed(2)) : '—'}
+          icon="market"
+          tone="bg-blue-50 text-blue-600"
+          label="Moves with the market"
+          value={data ? (data.risk.beta === null ? '—' : `${data.risk.beta.toFixed(2)}×`) : '—'}
           note={
             data
               ? data.risk.beta === null
                 ? 'Not enough price history'
-                : `A 1% index move is about ${data.risk.beta.toFixed(2)}% here`
+                : `${data.risk.beta.toFixed(2)}% for every 1% in the Nifty`
               : pending
           }
-        >
-          {data?.risk.volatility != null && (
-            <p className="mt-2 pt-2 border-t border-groww-border-light text-[11px] text-groww-text-muted">
-              {pct(data.risk.volatility)} annualised volatility · last {data.risk.sessions} sessions
-            </p>
-          )}
-        </Tile>
+          hint={
+            data?.risk.volatility != null
+              ? `Beta to the Nifty 50. Annualised volatility ${pct(data.risk.volatility)} over the last ${data.risk.sessions} sessions.`
+              : 'Beta to the Nifty 50'
+          }
+        />
 
         <Tile
           id="risk-exposure"
-          label="Top exposure"
+          icon="exposure"
+          tone="bg-amber-50 text-amber-600"
+          label="Biggest exposure"
           value={topSector ? pct(topSector.weight) : '—'}
-          note={topSector ? `${topSector.sector}: ${topSector.holdings.join(', ')}` : pending}
-        >
-          {data && topSector && (
-            <>
-              <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden" aria-hidden>
-                <div className="h-full rounded-full bg-groww-green" style={{ width: `${Math.max(2, topSector.weight * 100)}%` }} />
-              </div>
-              <p className="mt-2 text-[11px] text-groww-text-muted leading-snug">
-                Largest holding {data.exposure.largest.name} {pct(data.exposure.largest.weight)} · spread like{' '}
-                {data.exposure.effective_holdings.toFixed(1)} equal positions
-              </p>
-            </>
-          )}
-        </Tile>
+          note={topSector ? `${topSector.sector} · ${topSector.holdings.join(', ')}` : pending}
+          hint={
+            data && topSector
+              ? `Largest holding ${data.exposure.largest.name} ${pct(data.exposure.largest.weight)}. The portfolio is spread like ${data.exposure.effective_holdings.toFixed(1)} equal positions.`
+              : undefined
+          }
+        />
 
         <Tile
           id="risk-alerts"
-          label="Active alerts"
+          icon="alerts"
+          tone={attention > 0 ? 'bg-amber-50 text-amber-600' : 'bg-groww-green-light text-groww-green'}
+          label="Needs attention"
           value={alerts.result ? String(attention) : '—'}
           note={
             alerts.result
               ? attention === 0
-                ? 'Nothing needs attention'
-                : `need${attention === 1 ? 's' : ''} attention`
+                ? 'All clear'
+                : `${attention === 1 ? 'alert' : 'alerts'} · tap to review`
               : alertsPending
           }
-        >
-          {alerts.result && (
-            <p className="mt-2 pt-2 border-t border-groww-border-light text-[11px] text-groww-text-muted">
-              {count('critical')} critical · {count('warning')} warning · {count('info')} info
-              {alerts.failed && ' · last refresh failed'}
-            </p>
-          )}
-        </Tile>
+          hint={
+            alerts.result
+              ? `${count('critical')} critical, ${count('warning')} warning, ${count('info')} info${alerts.failed ? '; last refresh failed' : ''}`
+              : undefined
+          }
+          onClick={openAlerts}
+        />
       </div>
     </section>
   )
@@ -284,11 +310,11 @@ export const RiskAlertList: React.FC<{ className?: string }> = ({ className = ''
           No alerts. Prices, news, weather and concentration were checked against your holdings.
         </p>
       ) : (
-        <ul className="mt-3.5 flex flex-col divide-y divide-groww-border-light">
+        <ul className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-1">
           {live.slice(0, MAX_ALERTS).map((alert) => {
             const SeverityIcon = SEVERITY[alert.severity].Icon
             return (
-              <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0">
+              <li key={alert.id} className="py-1">
                 <button onClick={openAlerts} className="w-full flex items-start gap-3 text-left rounded-xl hover:bg-groww-bg-primary transition-colors -mx-1.5 px-1.5 py-1">
                   <span
                     className={`mt-0.5 shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${SEVERITY[alert.severity].chip}`}
@@ -313,7 +339,7 @@ export const RiskAlertList: React.FC<{ className?: string }> = ({ className = ''
         </ul>
       )}
       {alerts.result && alerts.result.unavailable.length > 0 && (
-        <p className="mt-3 text-[11px] text-amber-700">
+        <p className="mt-3 text-xs text-amber-700">
           Not checked this time: {alerts.result.unavailable.join(', ')}.
         </p>
       )}
@@ -354,7 +380,7 @@ export const RiskStreamsCard: React.FC<{ backendUrl: string; className?: string 
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-base font-bold text-groww-text-primary">Data streams</h3>
         {feeds && (
-          <p className="text-[11px] text-groww-text-muted">
+          <p className="text-xs text-groww-text-muted">
             {(Object.keys(STATUS) as StreamStatus[])
               .filter((status) => feeds.counts[status] > 0)
               .map((status) => `${feeds.counts[status]} ${STATUS[status].label.toLowerCase()}`)

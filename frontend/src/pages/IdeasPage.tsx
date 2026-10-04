@@ -150,7 +150,7 @@ const Card: React.FC<{ id: string; title: string; subtitle?: string; children: R
 // A 0 to 100 sub-score as a number and a bar; a missing score says so.
 const Score: React.FC<{ value: Maybe }> = ({ value }) =>
   value === null ? (
-    <span className="text-[11px] text-groww-text-muted">neutral</span>
+    <span className="text-xs text-groww-text-muted">neutral</span>
   ) : (
     <span className="flex items-center gap-1.5">
       <span className="w-7 text-right font-semibold text-groww-text-primary tabular-nums">{Math.round(value)}</span>
@@ -169,7 +169,7 @@ const BeforeAfter: React.FC<{ label: string; before: string; after: string; note
   <tr className="border-t border-groww-border-light">
     <td className="py-1.5 pr-2 text-groww-text-secondary">
       {label}
-      {note && <span className="block text-[10px] text-groww-text-muted">{note}</span>}
+      {note && <span className="block text-[11px] text-groww-text-muted">{note}</span>}
     </td>
     <td className="py-1.5 px-2 text-right tabular-nums text-groww-text-secondary">{before}</td>
     <td className="py-1.5 pl-2 text-right tabular-nums font-semibold text-groww-text-primary">{after}</td>
@@ -182,12 +182,12 @@ const BeforeAfter: React.FC<{ label: string; before: string; after: string; note
 // A before → after figure on a suggestion card. `good` says whether the change is an improvement.
 const Delta: React.FC<{ label: string; before: string; after: string; good: boolean | null }> = ({ label, before, after, good }) => (
   <div className="rounded-xl bg-groww-bg-primary px-3 py-2.5 min-w-0">
-    <p className="text-[11px] text-groww-text-muted truncate">{label}</p>
+    <p className="text-xs text-groww-text-muted truncate">{label}</p>
     {/* A change too small to show in the figures is not coloured as better or worse. */}
     <p className={`mt-0.5 text-base font-bold tabular-nums ${good === null || before === after ? 'text-groww-text-primary' : good ? 'text-groww-green' : 'text-red-600'}`}>
       {after}
     </p>
-    <p className="text-[11px] text-groww-text-muted tabular-nums">from {before}</p>
+    <p className="text-xs text-groww-text-muted tabular-nums">from {before}</p>
   </div>
 )
 
@@ -221,7 +221,7 @@ const SuggestionCard: React.FC<{ suggestion: Suggestion; recommended: boolean }>
         <Delta label="Sharpe" before={num(metrics.sharpe.before)} after={num(metrics.sharpe.after)} good={better(metrics.sharpe.before, metrics.sharpe.after, false)} />
         <Delta label="Top risk share" before={pct(metrics.top_risk_share.before, 0)} after={pct(metrics.top_risk_share.after, 0)} good={better(metrics.top_risk_share.before, metrics.top_risk_share.after, true)} />
       </div>
-      <p className="mt-1.5 text-[11px] text-groww-text-muted">Your portfolio with {suggestion.symbol} at {pct(suggestion.tested_at)}</p>
+      <p className="mt-1.5 text-xs text-groww-text-muted">Your portfolio with {suggestion.symbol} at {pct(suggestion.tested_at)}</p>
 
       <button
         onClick={() => setOpen((value) => !value)}
@@ -253,7 +253,7 @@ const SuggestionCard: React.FC<{ suggestion: Suggestion; recommended: boolean }>
           </p>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-[11px] text-groww-text-muted">
+              <tr className="text-xs text-groww-text-muted">
                 <th className="text-left font-medium pb-1">Portfolio measure</th>
                 <th className="text-right font-medium pb-1 px-2">Before</th>
                 <th className="text-right font-medium pb-1 pl-2">After</th>
@@ -272,7 +272,7 @@ const SuggestionCard: React.FC<{ suggestion: Suggestion; recommended: boolean }>
               <BeforeAfter label="Largest share of risk" before={pct(metrics.top_risk_share.before, 0)} after={pct(metrics.top_risk_share.after, 0)} />
             </tbody>
           </table>
-          <p className="text-[11px] text-groww-text-muted">
+          <p className="text-xs text-groww-text-muted">
             {metrics.basis}, last {metrics.sessions} sessions. Correlation with the portfolio {num(metrics.correlation)}.
           </p>
           <div>
@@ -304,7 +304,7 @@ const SuggestionCard: React.FC<{ suggestion: Suggestion; recommended: boolean }>
               ))}
             </ul>
           </div>
-          <p className="text-[11px] text-groww-text-muted">
+          <p className="text-xs text-groww-text-muted">
             {suggestion.model_drivers.note}
             {suggestion.model_drivers.top.length > 0 &&
               ` Largest: ${suggestion.model_drivers.top.map(([name, share]) => `${name} ${pct(share, 0)}`).join(', ')}.`}
@@ -446,7 +446,7 @@ const IdeasPage: React.FC = () => {
               {data.narrative && (
                 <Notes label="Read the reasoning" className="mt-3">
                   <p className="text-groww-text-primary whitespace-pre-line">{data.narrative}</p>
-                  <p className="text-[11px] text-groww-text-muted">Summary: {data.narrator}.</p>
+                  <p className="text-xs text-groww-text-muted">Summary: {data.narrator}.</p>
                 </Notes>
               )}
             </section>
@@ -468,7 +468,7 @@ const IdeasPage: React.FC = () => {
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full min-w-[420px] text-xs tabular-nums">
                   <thead>
-                    <tr className="text-left text-[11px] text-groww-text-muted">
+                    <tr className="text-left text-xs text-groww-text-muted">
                       <th className="font-medium py-1.5">Sector held</th>
                       <th className="font-medium py-1.5 text-right">Share of value</th>
                       <th className="font-medium py-1.5 text-right">Reference</th>
@@ -508,7 +508,7 @@ const IdeasPage: React.FC = () => {
               <div className="overflow-x-auto -mx-1">
                 <table className="w-full min-w-[820px] text-xs">
                   <thead>
-                    <tr className="text-left text-[11px] text-groww-text-muted">
+                    <tr className="text-left text-xs text-groww-text-muted">
                       <th className="font-medium py-1.5 px-1">#</th>
                       <th className="font-medium py-1.5 px-1">Sector</th>
                       <th className="font-medium py-1.5 px-1 text-right">Score</th>
@@ -540,7 +540,7 @@ const IdeasPage: React.FC = () => {
                         {row.flags.some((flag) => !sharedFlags.includes(flag)) && (
                           <tr>
                             <td />
-                            <td colSpan={9} className="pb-2 px-1 text-[11px] text-amber-700">
+                            <td colSpan={9} className="pb-2 px-1 text-xs text-amber-700">
                               {row.flags.filter((flag) => !sharedFlags.includes(flag)).join(' · ')}
                             </td>
                           </tr>
@@ -551,7 +551,7 @@ const IdeasPage: React.FC = () => {
                 </table>
               </div>
               {sharedFlags.length > 0 && (
-                <p id="ideas-shared-flags" className="mt-2 text-[11px] text-amber-700">
+                <p id="ideas-shared-flags" className="mt-2 text-xs text-amber-700">
                   Applies to every sector: {sharedFlags.join(' · ')}.
                 </p>
               )}
@@ -578,7 +578,7 @@ const IdeasPage: React.FC = () => {
                   <div>
                     <table className="w-full text-xs tabular-nums">
                       <thead>
-                        <tr className="text-left text-[11px] text-groww-text-muted">
+                        <tr className="text-left text-xs text-groww-text-muted">
                           <th className="font-medium py-1.5">Holding</th>
                           <th className="font-medium py-1.5 text-right">Now</th>
                           <th className="font-medium py-1.5 text-right">Proposed</th>
@@ -590,7 +590,7 @@ const IdeasPage: React.FC = () => {
                           <tr key={row.name} className="border-t border-groww-border-light">
                             <td className="py-1.5 text-groww-text-primary">
                               {row.name}
-                              {row.new && <span className="ml-1.5 px-1 rounded bg-groww-green-light text-groww-green text-[10px] font-semibold">new</span>}
+                              {row.new && <span className="ml-1.5 px-1 rounded bg-groww-green-light text-groww-green text-[11px] font-semibold">new</span>}
                             </td>
                             <td className="py-1.5 text-right">{pct(row.current)}</td>
                             <td className="py-1.5 text-right font-semibold text-groww-text-primary">{pct(row.proposed)}</td>
@@ -608,7 +608,7 @@ const IdeasPage: React.FC = () => {
                     <div>
                       <table className="w-full text-xs tabular-nums">
                         <thead>
-                          <tr className="text-left text-[11px] text-groww-text-muted">
+                          <tr className="text-left text-xs text-groww-text-muted">
                             <th className="font-medium py-1.5">Out of sample</th>
                             <th className="font-medium py-1.5 text-right">Sharpe (90% interval)</th>
                             <th className="font-medium py-1.5 text-right">Volatility</th>
@@ -623,7 +623,7 @@ const IdeasPage: React.FC = () => {
                                 <td className="py-1.5 font-semibold text-groww-text-primary">{WALK_LABELS[key]}</td>
                                 <td className="py-1.5 text-right">
                                   {num(result.sharpe)}
-                                  <span className="block text-[10px] text-groww-text-muted">{interval(result.sharpe_interval)}</span>
+                                  <span className="block text-[11px] text-groww-text-muted">{interval(result.sharpe_interval)}</span>
                                 </td>
                                 <td className="py-1.5 text-right">{pct(result.vol)}</td>
                                 <td className="py-1.5 text-right">{pct(result.max_drawdown)}</td>

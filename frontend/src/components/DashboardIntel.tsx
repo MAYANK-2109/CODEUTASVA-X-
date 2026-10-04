@@ -98,7 +98,7 @@ const AnswerLine: React.FC<{ text: string }> = ({ text }) => (
       if (part.startsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>
       if (/^\[[A-Z]\d/.test(part)) {
         return (
-          <span key={i} className="mx-0.5 px-1 rounded bg-groww-green-light text-groww-green text-[10px] font-semibold align-middle">
+          <span key={i} className="mx-0.5 px-1 rounded bg-groww-green-light text-groww-green text-[11px] font-semibold align-middle">
             {part.slice(1, -1)}
           </span>
         )
@@ -217,7 +217,7 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
               run(preset)
             }}
             disabled={busy}
-            className="agent-preset px-2.5 py-1 rounded-lg bg-groww-bg-primary border border-groww-border-light text-[11px] text-groww-text-secondary hover:border-groww-green hover:text-groww-green disabled:opacity-50 transition-colors"
+            className="agent-preset px-2.5 py-1 rounded-lg bg-groww-bg-primary border border-groww-border-light text-xs text-groww-text-secondary hover:border-groww-green hover:text-groww-green disabled:opacity-50 transition-colors"
           >
             {preset}
           </button>
@@ -264,9 +264,9 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
                         <span className="w-2 h-2 rounded-full bg-gray-300" />
                       )}
                       <span className="text-xs font-bold text-groww-text-primary truncate">{agent.label}</span>
-                      {step && <span className="ml-auto shrink-0 text-[10px] text-groww-text-muted tabular-nums">{duration(step.ms)}</span>}
+                      {step && <span className="ml-auto shrink-0 text-[11px] text-groww-text-muted tabular-nums">{duration(step.ms)}</span>}
                     </div>
-                    <p className="mt-0.5 text-[11px] leading-snug text-groww-text-secondary">
+                    <p className="mt-0.5 text-xs leading-snug text-groww-text-secondary">
                       {step ? step.summary : running ? 'Working…' : agent.role}
                     </p>
                   </div>
@@ -276,22 +276,22 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
           </React.Fragment>
         ))}
       </ol>
-      <p className="mt-2 text-[11px] text-groww-text-muted">Green: finished · amber "!": ran with missing data.</p>
+      <p className="mt-2 text-xs text-groww-text-muted">Green: finished · amber "!": ran with missing data.</p>
 
       {error && <p className="mt-3 rounded-xl bg-red-50 text-red-600 px-3 py-2 text-xs">{error}</p>}
 
       {answer && (
         <div id="agent-graph-answer" className="mt-4 pt-4 border-t border-groww-border-light grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           <div className="min-w-0">
-            <p className="text-[11px] text-groww-text-muted">You asked: {asked}</p>
-            <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${ACTION[answer.action].className}`}>
+            <p className="text-xs text-groww-text-muted">You asked: {asked}</p>
+            <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-xs font-semibold ${ACTION[answer.action].className}`}>
               {ACTION[answer.action].text}
             </span>
             <div className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-groww-text-primary">
               {answer.text.split('\n').map((line, i) => {
                 if (line.startsWith('## ')) {
                   return (
-                    <h4 key={i} className="mt-1.5 text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">
+                    <h4 key={i} className="mt-1.5 text-xs font-bold uppercase tracking-wide text-groww-text-muted">
                       {line.slice(3)}
                     </h4>
                   )
@@ -307,20 +307,20 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
                 return line.trim() ? <p key={i}><AnswerLine text={line} /></p> : null
               })}
             </div>
-            {answer.writer === 'template' && <p className="mt-2 text-[11px] text-groww-text-muted">Rule-based wording.</p>}
+            {answer.writer === 'template' && <p className="mt-2 text-xs text-groww-text-muted">Rule-based wording.</p>}
           </div>
 
           <div className="min-w-0 flex flex-col gap-3">
             {/* The agents' explicit trade and hedge recommendation */}
             <div id="agent-graph-trades" className="rounded-xl border border-groww-border px-3.5 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Trade and hedge recommendation</p>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">Trade and hedge recommendation</p>
               {answer.hedges.length > 0 ? (
                 <ul className="mt-2 flex flex-col gap-1.5">
                   {answer.hedges.map((hedge, i) => (
                     <li key={i} className="rounded-lg bg-groww-bg-primary px-3 py-2 text-xs">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`px-1.5 py-0.5 rounded font-bold uppercase text-[10px] ${
+                          className={`px-1.5 py-0.5 rounded font-bold uppercase text-[11px] ${
                             hedge.side === 'short' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'
                           }`}
                         >
@@ -329,7 +329,7 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
                         <span className="font-semibold text-groww-text-primary truncate">{hedge.instrument}</span>
                         <span className="ml-auto shrink-0 font-semibold tabular-nums">{inr(hedge.notional)}</span>
                       </div>
-                      <p className="mt-1 text-[11px] text-groww-text-secondary">
+                      <p className="mt-1 text-xs text-groww-text-secondary">
                         Expected to offset about {inr(hedge.expected_offset)} of the loss
                         {hedge.optional ? '; optional, because no hedge is needed on the numbers' : ''}. Evidence {hedge.evidence}.
                       </p>
@@ -340,7 +340,7 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
                 <p className="mt-1.5 text-xs text-groww-text-primary">No trade is recommended.</p>
               )}
               {answer.decision && (
-                <p className="mt-2 text-[11px] text-groww-text-secondary leading-relaxed">
+                <p className="mt-2 text-xs text-groww-text-secondary leading-relaxed">
                   <span className="font-semibold text-groww-text-primary">Why: </span>
                   {answer.decision.comparison}
                 </p>
@@ -356,7 +356,7 @@ export const AgentGraphCard: React.FC<{ backendUrl: string }> = ({ backendUrl })
             />
 
             {answer.gaps.length > 0 && (
-              <ul className="flex flex-col gap-1 text-[11px] text-amber-700">
+              <ul className="flex flex-col gap-1 text-xs text-amber-700">
                 {answer.gaps.map((gap, i) => (
                   <li key={i} className="rounded-lg bg-amber-50 px-2.5 py-1.5">{gap}</li>
                 ))}
@@ -473,7 +473,7 @@ const PriceWeatherCard: React.FC<{
               lanes={lanes}
             />
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-groww-text-secondary">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-groww-text-secondary">
             {data.weather && lanes.length > 0 ? (
               KIND_ORDER.map((kind) => (
                 <span key={kind} className="inline-flex items-center gap-1.5">
@@ -513,7 +513,7 @@ const RiskBreakdownCard: React.FC<{ state: Loadable<PortfolioInsights> }> = ({ s
       {state.status === 'error' && <p className="mt-4 text-sm text-red-600">{state.message}</p>}
       {data && (
         <>
-          <p className="mt-3 flex items-center gap-4 text-[11px] text-groww-text-secondary">
+          <p className="mt-3 flex items-center gap-4 text-xs text-groww-text-secondary">
             <span className="inline-flex items-center gap-1.5">
               <span className="w-3 h-2 rounded-sm" style={{ background: 'var(--viz-series-1)' }} /> Share of value
             </span>
@@ -547,7 +547,7 @@ const RiskBreakdownCard: React.FC<{ state: Loadable<PortfolioInsights> }> = ({ s
                     <div className="h-2 rounded-r" style={{ width: `${Math.max(1.5, (sector.risk_share / scale) * 100)}%`, background: 'var(--viz-series-2)' }} />
                   )}
                 </div>
-                <p className="mt-0.5 text-[11px] text-groww-text-muted truncate">{sector.holdings.join(', ')}</p>
+                <p className="mt-0.5 text-xs text-groww-text-muted truncate">{sector.holdings.join(', ')}</p>
               </li>
             ))}
           </ul>
@@ -555,7 +555,7 @@ const RiskBreakdownCard: React.FC<{ state: Loadable<PortfolioInsights> }> = ({ s
           {riskiest.length > 0 && (
             <table className="mt-4 w-full text-xs tabular-nums">
               <thead>
-                <tr className="text-left text-[11px] text-groww-text-muted">
+                <tr className="text-left text-xs text-groww-text-muted">
                   <th className="font-medium py-1.5">Holdings carrying the most risk</th>
                   <th className="font-medium py-1.5 text-right">Value</th>
                   <th className="font-medium py-1.5 text-right">Risk</th>

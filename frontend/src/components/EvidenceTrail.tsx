@@ -59,13 +59,13 @@ const EvidenceTags: React.FC<{ label: string; ids: string[]; byId: Map<string, T
   byId,
 }) =>
   ids.length === 0 ? null : (
-    <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-groww-text-muted">
+    <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-groww-text-muted">
       <span className="font-semibold">{label}</span>
       {ids.map((id) => (
         <span
           key={id}
           title={byId.get(id)?.claim}
-          className="px-1.5 rounded bg-groww-green-light text-groww-green text-[10px] font-semibold cursor-help"
+          className="px-1.5 rounded bg-groww-green-light text-groww-green text-[11px] font-semibold cursor-help"
         >
           {id}
         </span>
@@ -87,7 +87,7 @@ const TrailStepItem: React.FC<{
     <li className="relative flex gap-2.5 pb-3.5 last:pb-0">
       {!last && <span className="absolute left-[10px] top-6 bottom-0 w-px bg-groww-border" aria-hidden />}
       <span
-        className={`relative shrink-0 w-[21px] h-[21px] rounded-full text-white text-[10px] font-bold flex items-center justify-center ${
+        className={`relative shrink-0 w-[21px] h-[21px] rounded-full text-white text-[11px] font-bold flex items-center justify-center ${
           run?.status === 'degraded' ? 'bg-amber-500' : 'bg-groww-green'
         }`}
       >
@@ -96,12 +96,12 @@ const TrailStepItem: React.FC<{
       <div className="min-w-0 flex-1 text-xs leading-relaxed">
         <p className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-semibold text-groww-text-primary">{step.title}</span>
-          <span className="ml-auto shrink-0 text-[10px] text-groww-text-muted tabular-nums">
+          <span className="ml-auto shrink-0 text-[11px] text-groww-text-muted tabular-nums">
             {AGENT_LABELS[step.agent] ?? step.agent} agent{run ? ` · ${duration(run.ms)}` : ''}
           </span>
         </p>
         {run?.status === 'degraded' && (
-          <p className="text-[11px] font-semibold text-amber-700">Ran with missing data; see the notes under the answer.</p>
+          <p className="text-xs font-semibold text-amber-700">Ran with missing data; see the notes under the answer.</p>
         )}
         <p className="text-groww-text-secondary">
           <span className="font-semibold">How: </span>
@@ -112,7 +112,7 @@ const TrailStepItem: React.FC<{
           {step.result}
         </p>
         {step.notes.length > 0 && (
-          <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-groww-text-secondary">
+          <ul className="mt-1 flex flex-col gap-0.5 text-xs text-groww-text-secondary">
             {step.notes.map((note, i) => (
               <li key={i} className="flex gap-1.5">
                 <span className="mt-[7px] w-1 h-1 rounded-full bg-groww-text-muted shrink-0" />
@@ -131,14 +131,14 @@ const TrailStepItem: React.FC<{
             <button
               onClick={() => setShowRows((value) => !value)}
               aria-expanded={showRows}
-              className="mt-1 text-[11px] font-semibold text-groww-green hover:text-groww-green-dark"
+              className="mt-1 text-xs font-semibold text-groww-green hover:text-groww-green-dark"
             >
               {showRows ? 'Hide' : 'Show'} the {found.length} evidence row{found.length === 1 ? '' : 's'} it produced (
               {found[0].id}
               {found.length > 1 ? ` to ${found[found.length - 1].id}` : ''})
             </button>
             {showRows && (
-              <ul className="mt-1.5 flex flex-col gap-1 text-[11px]">
+              <ul className="mt-1.5 flex flex-col gap-1 text-xs">
                 {found.map((item) => (
                   <li key={item.id} className="rounded-lg bg-groww-bg-primary px-2.5 py-1.5">
                     <span className="font-semibold text-groww-green">{item.id}</span> {item.claim}
@@ -183,11 +183,11 @@ const EvidenceTrail: React.FC<{
         </svg>
         <span className="min-w-0">
           <span className="block text-xs font-bold text-groww-text-primary">Evidence trail</span>
-          <span className="block text-[11px] text-groww-text-muted">
+          <span className="block text-xs text-groww-text-muted">
             Why this was recommended, in {trail.length} steps from {evidence.length} evidence rows
           </span>
         </span>
-        <span className="ml-auto shrink-0 text-[11px] font-semibold text-groww-green">{open ? 'Hide' : 'Show'}</span>
+        <span className="ml-auto shrink-0 text-xs font-semibold text-groww-green">{open ? 'Hide' : 'Show'}</span>
       </button>
 
       {open && (
@@ -195,8 +195,8 @@ const EvidenceTrail: React.FC<{
           {decision && (
             <div className="rounded-xl bg-groww-green-pale border border-groww-green/30 px-3 py-2.5 text-xs leading-relaxed">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-groww-text-muted">Why this recommendation</p>
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${DECISION_LABELS[decision.action].className}`}>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-groww-text-muted">Why this recommendation</p>
+                <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-semibold ${DECISION_LABELS[decision.action].className}`}>
                   {DECISION_LABELS[decision.action].text}
                 </span>
               </div>
