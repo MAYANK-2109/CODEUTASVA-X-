@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { Skeleton } from '../components/Skeleton'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -736,9 +737,19 @@ const InsightsPage: React.FC = () => {
 
       <div className="flex-1 p-4 sm:p-6 max-w-[1400px] w-full mx-auto flex flex-col gap-4 sm:gap-6">
         {portfolio.status === 'loading' && (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="w-12 h-12 border-4 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
-            <p className="text-sm text-groww-text-secondary">Loading portfolio insights…</p>
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="p-4 rounded-xl border border-gray-100 bg-white">
+                  <Skeleton className="w-1/2 h-4 mb-2" />
+                  <Skeleton className="w-3/4 h-8" />
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Skeleton className="w-full h-[300px] rounded-xl" />
+              <Skeleton className="w-full h-[300px] rounded-xl" />
+            </div>
           </div>
         )}
         {portfolio.status === 'error' && (
@@ -947,9 +958,10 @@ const InsightsPage: React.FC = () => {
                   </p>
 
                   {weather.status === 'loading' && (
-                    <div className="flex items-center gap-2 text-sm text-groww-text-secondary py-4">
-                      <span className="w-4 h-4 border-2 border-groww-green/30 border-t-groww-green rounded-full animate-spin" />
-                      Loading forecast…
+                    <div className="flex flex-col gap-3 mt-2">
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <Skeleton key={i} className="w-full h-16 rounded-xl" />
+                      ))}
                     </div>
                   )}
                   {weather.status === 'error' && (

@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
 import NotificationBell from '../components/NotificationBell'
 import RiskTerminal from '../components/RiskTerminal'
+import { Skeleton } from '../components/Skeleton'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -590,8 +591,8 @@ const DashboardPage: React.FC = () => {
   const nifty = market?.indices.find((i) => i.key === 'nifty')
   const sensex = market?.indices.find((i) => i.key === 'sensex')
   const marketPending = marketFailed ? 'Unavailable' : 'Loading…'
-  // A dash stands in for any portfolio figure that has not loaded.
-  const shown = (text: string) => (portfolioStats.available ? text : '—')
+  // A skeleton stands in for any portfolio figure that has not loaded.
+  const shown = (text: string, widthClass = 'w-16') => (portfolioStats.available ? text : <Skeleton className={`h-4 inline-block align-middle ${widthClass}`} />)
 
   useEffect(() => {
     fetchPortfolioData()
@@ -911,9 +912,23 @@ const DashboardPage: React.FC = () => {
                 {/* News Trail Timeline / List */}
                 <div className="relative mt-2 divide-y divide-gray-100 max-h-[560px] overflow-y-auto pr-1">
                   {newsLoading && news.length === 0 ? (
-                    <div className="py-12 flex flex-col items-center justify-center gap-3">
-                      <div className="w-8 h-8 border-3 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
-                      <p className="text-xs text-groww-text-muted">Searching for news on your sectors…</p>
+                    <div className="flex flex-col">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="py-3.5 px-2.5 flex items-start gap-3.5">
+                          <div className="flex flex-col items-center shrink-0 mt-1">
+                            <Skeleton className="w-2.5 h-2.5 rounded-full bg-emerald-100" />
+                            {i !== 5 && <Skeleton className="w-0.5 h-10 my-1 bg-emerald-50" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Skeleton className="w-12 h-4" />
+                              <Skeleton className="w-16 h-4" />
+                            </div>
+                            <Skeleton className="w-3/4 h-4 mb-1" />
+                            <Skeleton className="w-1/2 h-4" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : filteredNews.length === 0 ? (
                     <div className="py-12 text-center">

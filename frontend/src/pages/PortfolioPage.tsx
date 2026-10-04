@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
+import { Skeleton } from '../components/Skeleton'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -811,9 +812,56 @@ const PortfolioPage: React.FC<PortfolioPageProps> = ({ externalShowModal, onExte
 
         {/* Holdings Table */}
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="w-10 h-10 border-4 border-groww-green/20 border-t-groww-green rounded-full animate-spin" />
-            <p className="text-sm text-gray-400">Loading your portfolio…</p>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="px-5 py-3 text-left"><Skeleton className="w-16 h-4" /></th>
+                    <th className="px-4 py-3 text-left"><Skeleton className="w-12 h-4" /></th>
+                    <th className="px-4 py-3 text-right"><Skeleton className="w-10 h-4 ml-auto" /></th>
+                    <th className="px-4 py-3 text-right"><Skeleton className="w-16 h-4 ml-auto" /></th>
+                    <th className="px-4 py-3 text-right"><Skeleton className="w-16 h-4 ml-auto" /></th>
+                    <th className="px-4 py-3 text-right"><Skeleton className="w-16 h-4 ml-auto" /></th>
+                    <th className="px-5 py-3 text-right"><Skeleton className="w-16 h-4 ml-auto" /></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="border-b border-gray-50 last:border-0">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
+                          <div className="space-y-2 flex-1">
+                            <Skeleton className="w-24 h-4" />
+                            <Skeleton className="w-16 h-3" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <Skeleton className="w-12 h-5 rounded" />
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Skeleton className="w-10 h-4 ml-auto" />
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Skeleton className="w-16 h-4 ml-auto" />
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Skeleton className="w-16 h-4 ml-auto" />
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <Skeleton className="w-16 h-4 ml-auto" />
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Skeleton className="w-16 h-4 ml-auto mb-1" />
+                        <Skeleton className="w-10 h-3 ml-auto" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : displayed.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
