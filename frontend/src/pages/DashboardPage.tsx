@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { isLeftover, savedPrice } from '../lib/holdings'
 import NotificationBell from '../components/NotificationBell'
-import RiskTerminal from '../components/RiskTerminal'
+import { RiskOverviewTiles, RiskAlertList, RiskStreamsCard } from '../components/RiskTerminal'
 import { Skeleton } from '../components/Skeleton'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -710,16 +710,19 @@ const DashboardPage: React.FC = () => {
 
         {/* ── Dashboard Body Grid (Matching Reference Wireframe Layout) ────── */}
         <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto flex flex-col gap-6">
-          {/* Risk first: what could be lost, where, what needs attention, and feed health */}
-          <RiskTerminal backendUrl={backendUrl} refreshKey={refreshKey} />
+          {/* Risk first: what could be lost, where exposure sits, and active alerts summary */}
+          <RiskOverviewTiles backendUrl={backendUrl} refreshKey={refreshKey} />
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
             {/* ════════════════════════════════════════════════════════════════
                 LEFT / CENTER SECTION (Col 1 to 7)
-                Matches wireframe: Top = "welcome message", Bottom = "news trail"
+                Matches wireframe: Top = "alerts & welcome", Bottom = "news trail"
                ════════════════════════════════════════════════════════════════ */}
             <div className="lg:col-span-7 flex flex-col gap-6">
+
+              {/* ── 0. WHAT NEEDS ATTENTION (Alerts) ───────────────────────── */}
+              <RiskAlertList />
 
               {/* ── 1. WELCOME MESSAGE CARD ───────────────────────────────── */}
               <section
@@ -1020,9 +1023,12 @@ const DashboardPage: React.FC = () => {
 
             {/* ════════════════════════════════════════════════════════════════
                 RIGHT SECTION (Col 8 to 12)
-                Matches wireframe: "personal portfolio analysis" with 6 boxes
+                Matches wireframe: "data streams" and "personal portfolio analysis"
                ════════════════════════════════════════════════════════════════ */}
             <div className="lg:col-span-5 flex flex-col gap-6">
+
+              {/* ── DATA STREAMS STATUS ──────────────────────────────────── */}
+              <RiskStreamsCard backendUrl={backendUrl} />
 
               <section
                 id="personal-portfolio-card"

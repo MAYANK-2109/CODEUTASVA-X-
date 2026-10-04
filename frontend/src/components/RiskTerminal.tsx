@@ -105,26 +105,12 @@ const Tile: React.FC<{ id: string; label: string; value: string; note?: string; 
 )
 
 // ---------------------------------------------------------------------------
-// Risk overview: what could be lost, where the exposure sits, what needs
-// attention now, and whether the feeds behind those figures are working.
+// 1. Top Risk Summary Tiles
 // ---------------------------------------------------------------------------
-const RiskTerminal: React.FC<{ backendUrl: string; refreshKey?: number }> = ({ backendUrl, refreshKey = 0 }) => {
+export const RiskOverviewTiles: React.FC<{ backendUrl: string; refreshKey?: number }> = ({ backendUrl, refreshKey = 0 }) => {
   const { user } = useAuth()
   const alerts = useAlerts()
   const [overview, setOverview] = useState<Loadable<Overview>>({ status: 'loading' })
-  const [streams, setStreams] = useState<Loadable<Streams>>({ status: 'loading' })
-
-  const loadStreams = useCallback(async () => {
-    try {
-      const response = await fetch(`${backendUrl}/api/terminal/streams`)
-      if (!response.ok) throw new Error(`Request failed (${response.status})`)
-      setStreams({ status: 'ready', data: await response.json() })
-    } catch {
-      setStreams((previous) =>
-        previous.status === 'ready' ? previous : { status: 'error', message: 'Feed status could not be read.' },
-      )
-    }
-  }, [backendUrl])
 
   const loadOverview = useCallback(async () => {
     if (!user?.id) return
@@ -146,35 +132,24 @@ const RiskTerminal: React.FC<{ backendUrl: string; refreshKey?: number }> = ({ b
       setOverview({ status: 'ready', data: await response.json() })
     } catch (e) {
       const message = e instanceof TypeError ? 'Could not reach the backend.' : (e as Error).message
-      // Keep the last good figures if a refresh fails.
       setOverview((previous) => (previous.status === 'ready' ? previous : { status: 'error', message }))
     }
   }, [user?.id, backendUrl])
 
   useEffect(() => {
-    // The risk request exercises the price feeds, so the feed status is read after it.
-    const run = () => loadOverview().then(loadStreams)
-    run()
-    const timer = setInterval(run, OVERVIEW_REFRESH_MS)
+    loadOverview()
+    const timer = setInterval(loadOverview, OVERVIEW_REFRESH_MS)
     return () => clearInterval(timer)
-  }, [loadOverview, loadStreams, refreshKey])
-
-  useEffect(() => {
-    const timer = setInterval(loadStreams, STREAMS_REFRESH_MS)
-    return () => clearInterval(timer)
-  }, [loadStreams])
+  }, [loadOverview, refreshKey])
 
   const data = overview.status === 'ready' ? overview.data : null
   const pending = overview.status === 'loading' ? 'Loading…' : 'Unavailable'
   const topSector = data?.exposure.sectors[0]
 
-  // A rehearsed drill is not a live alert.
   const live = (alerts.result?.alerts ?? []).filter((a) => !a.hedge?.drill)
   const count = (severity: Severity) => live.filter((a) => a.severity === severity).length
   const attention = count('critical') + count('warning')
   const alertsPending = alerts.loading ? 'Checking…' : 'Unavailable'
-
-  const feeds = streams.status === 'ready' ? streams.data : null
 
   return (
     <section id="risk-terminal" aria-label="Risk overview" className="flex flex-col gap-4">
@@ -269,99 +244,160 @@ const RiskTerminal: React.FC<{ backendUrl: string; refreshKey?: number }> = ({ b
           )}
         </Tile>
       </div>
+    </section>
+  )
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-        {/* What needs attention now */}
-        <div id="risk-alert-list" className="lg:col-span-7 rounded-2xl bg-white border border-groww-border-light shadow-card p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-groww-text-primary">What needs attention</h3>
-            <button
-              onClick={openAlerts}
-              className="text-xs font-semibold text-groww-green hover:text-groww-green-dark px-2 py-1 rounded-lg hover:bg-groww-green-light transition-colors"
-            >
-              {live.length > MAX_ALERTS ? `All ${live.length} alerts` : 'Open alerts'}
-            </button>
-          </div>
-          {!alerts.result ? (
-            <p className="mt-3 text-xs text-groww-text-secondary">
-              {alerts.loading ? 'Checking prices, news, weather and the news scan…' : 'Alerts are unavailable right now.'}
-            </p>
-          ) : live.length === 0 ? (
-            <p className="mt-3 text-xs text-groww-text-secondary">
-              No alerts. Prices, news, weather and concentration were checked against your holdings.
-            </p>
-          ) : (
-            <ul className="mt-3 flex flex-col divide-y divide-groww-border-light">
-              {live.slice(0, MAX_ALERTS).map((alert) => (
-                <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
-                  <span
-                    className={`mt-0.5 shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${SEVERITY[alert.severity].chip}`}
-                  >
-                    <span aria-hidden>{SEVERITY[alert.severity].mark}</span>
-                    {SEVERITY[alert.severity].label}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
-                    <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">
-                      <span className="font-semibold text-groww-text-primary">Action: </span>
-                      {alert.solution?.headline ?? alert.recommendation}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {alerts.result && alerts.result.unavailable.length > 0 && (
-            <p className="mt-3 text-[11px] text-amber-700">
-              Not checked this time: {alerts.result.unavailable.join(', ')}.
-            </p>
+// ---------------------------------------------------------------------------
+// 2. What Needs Attention (Alerts List)
+// ---------------------------------------------------------------------------
+export const RiskAlertList: React.FC<{ className?: string }> = ({ className = '' }) => {
+  const alerts = useAlerts()
+  const live = (alerts.result?.alerts ?? []).filter((a) => !a.hedge?.drill)
+
+  return (
+    <div id="risk-alert-list" className={`rounded-2xl sm:rounded-3xl bg-white border border-groww-border-light shadow-card p-5 sm:p-6 transition-all duration-200 ${className}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-bold text-groww-text-primary">What needs attention</h3>
+          {live.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/60">
+              {live.length} active
+            </span>
           )}
         </div>
+        <button
+          onClick={openAlerts}
+          className="text-xs font-semibold text-groww-green hover:text-groww-green-dark px-2.5 py-1 rounded-lg hover:bg-groww-green-light transition-colors"
+        >
+          {live.length > MAX_ALERTS ? `All ${live.length} alerts` : 'Open alerts'}
+        </button>
+      </div>
+      {!alerts.result ? (
+        <p className="mt-3 text-xs text-groww-text-secondary">
+          {alerts.loading ? 'Checking prices, news, weather and the news scan…' : 'Alerts are unavailable right now.'}
+        </p>
+      ) : live.length === 0 ? (
+        <p className="mt-3 text-xs text-groww-text-secondary">
+          No alerts. Prices, news, weather and concentration were checked against your holdings.
+        </p>
+      ) : (
+        <ul className="mt-3.5 flex flex-col divide-y divide-groww-border-light">
+          {live.slice(0, MAX_ALERTS).map((alert) => (
+            <li key={alert.id} className="py-2.5 first:pt-0 last:pb-0 flex items-start gap-3">
+              <span
+                className={`mt-0.5 shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${SEVERITY[alert.severity].chip}`}
+              >
+                <span aria-hidden>{SEVERITY[alert.severity].mark}</span>
+                {SEVERITY[alert.severity].label}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-groww-text-primary leading-snug">{alert.title}</p>
+                <p className="mt-0.5 text-xs text-groww-text-secondary leading-snug line-clamp-2">
+                  <span className="font-semibold text-groww-text-primary">Action: </span>
+                  {alert.solution?.headline ?? alert.recommendation}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {alerts.result && alerts.result.unavailable.length > 0 && (
+        <p className="mt-3 text-[11px] text-amber-700">
+          Not checked this time: {alerts.result.unavailable.join(', ')}.
+        </p>
+      )}
+    </div>
+  )
+}
 
-        {/* Whether the data behind the figures is arriving */}
-        <div id="risk-streams" className="lg:col-span-5 rounded-2xl bg-white border border-groww-border-light shadow-card p-4 sm:p-5">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-sm font-bold text-groww-text-primary">Data streams</h3>
-            {feeds && (
-              <p className="text-[11px] text-groww-text-muted">
-                {(Object.keys(STATUS) as StreamStatus[])
-                  .filter((status) => feeds.counts[status] > 0)
-                  .map((status) => `${feeds.counts[status]} ${STATUS[status].label.toLowerCase()}`)
-                  .join(' · ')}
-              </p>
-            )}
-          </div>
-          {!feeds ? (
-            <p className="mt-3 text-xs text-groww-text-secondary">
-              {streams.status === 'error' ? streams.message : 'Checking each feed…'}
-            </p>
-          ) : (
-            <ul className="mt-3 flex flex-col gap-2">
-              {feeds.streams.map((stream) => {
-                const status = STATUS[stream.status]
-                const when = ago(stream.checked_at)
-                return (
-                  <li key={stream.key} className="flex items-start gap-2.5 text-xs">
-                    <span className={`w-[74px] shrink-0 whitespace-nowrap font-semibold ${status.className}`}>
-                      <span aria-hidden>{status.mark}</span> {status.label}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="font-semibold text-groww-text-primary">{stream.label}</span>{' '}
-                      <span className="text-groww-text-muted">{stream.source}</span>
-                      <span className="block text-groww-text-secondary leading-snug">{stream.detail}</span>
-                    </span>
-                    <span className="shrink-0 text-right text-[11px] text-groww-text-muted tabular-nums">
-                      {when}
-                      {stream.latency_ms !== null && <span className="block">{stream.latency_ms} ms</span>}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+// ---------------------------------------------------------------------------
+// 3. Data Streams Card
+// ---------------------------------------------------------------------------
+export const RiskStreamsCard: React.FC<{ backendUrl: string; className?: string }> = ({ backendUrl, className = '' }) => {
+  const [streams, setStreams] = useState<Loadable<Streams>>({ status: 'loading' })
+
+  const loadStreams = useCallback(async () => {
+    try {
+      const response = await fetch(`${backendUrl}/api/terminal/streams`)
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+      setStreams({ status: 'ready', data: await response.json() })
+    } catch {
+      setStreams((previous) =>
+        previous.status === 'ready' ? previous : { status: 'error', message: 'Feed status could not be read.' },
+      )
+    }
+  }, [backendUrl])
+
+  useEffect(() => {
+    loadStreams()
+    const timer = setInterval(loadStreams, STREAMS_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [loadStreams])
+
+  const feeds = streams.status === 'ready' ? streams.data : null
+
+  return (
+    <div id="risk-streams" className={`rounded-2xl sm:rounded-3xl bg-white border border-groww-border-light shadow-card p-5 sm:p-6 transition-all duration-200 ${className}`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-base font-bold text-groww-text-primary">Data streams</h3>
+        {feeds && (
+          <p className="text-[11px] text-groww-text-muted">
+            {(Object.keys(STATUS) as StreamStatus[])
+              .filter((status) => feeds.counts[status] > 0)
+              .map((status) => `${feeds.counts[status]} ${STATUS[status].label.toLowerCase()}`)
+              .join(' · ')}
+          </p>
+        )}
+      </div>
+      {!feeds ? (
+        <p className="mt-3 text-xs text-groww-text-secondary">
+          {streams.status === 'error' ? streams.message : 'Checking each feed…'}
+        </p>
+      ) : (
+        <ul className="mt-3.5 flex flex-col gap-2.5">
+          {feeds.streams.map((stream) => {
+            const status = STATUS[stream.status]
+            const when = ago(stream.checked_at)
+            return (
+              <li key={stream.key} className="flex items-start gap-2.5 text-xs">
+                <span className={`w-[74px] shrink-0 whitespace-nowrap font-semibold ${status.className}`}>
+                  <span aria-hidden>{status.mark}</span> {status.label}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-semibold text-groww-text-primary">{stream.label}</span>{' '}
+                  <span className="text-groww-text-muted">{stream.source}</span>
+                  <span className="block text-groww-text-secondary leading-snug">{stream.detail}</span>
+                </span>
+                <span className="shrink-0 text-right text-[11px] text-groww-text-muted tabular-nums">
+                  {when}
+                  {stream.latency_ms !== null && <span className="block">{stream.latency_ms} ms</span>}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 4. Default composite component (kept for backward compatibility)
+// ---------------------------------------------------------------------------
+const RiskTerminal: React.FC<{ backendUrl: string; refreshKey?: number }> = ({ backendUrl, refreshKey = 0 }) => {
+  return (
+    <div className="flex flex-col gap-6">
+      <RiskOverviewTiles backendUrl={backendUrl} refreshKey={refreshKey} />
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-7">
+          <RiskAlertList />
+        </div>
+        <div className="lg:col-span-5">
+          <RiskStreamsCard backendUrl={backendUrl} />
         </div>
       </div>
-    </section>
+    </div>
   )
 }
 
