@@ -2,10 +2,14 @@
 
 import math
 
+import numpy as np
 import pandas as pd
 
-from app.risk import metrics
+from app.risk import metrics, portfolio_metrics
 from app.tools.market import NIFTY
+
+
+MIN_SESSIONS_FOR_RISK = 60
 
 
 def _number(value) -> float | None:
@@ -38,6 +42,20 @@ def snapshot(holdings: list[dict], closes: pd.DataFrame) -> dict | None:
 
     returns = metrics.daily_returns(closes)
     portfolio = metrics.portfolio_returns(returns, weights)
+
+    # Each holding's share of portfolio risk, which differs from its share of value
+    # when it is more volatile or moves with the rest. None without enough shared history.
+    shared = returns[list(weights)].dropna(how="any")
+    risk_share: dict[str, float | None] = {t: None for t in weights}
+    if len(shared) >= MIN_SESSIONS_FOR_RISK:
+        cov, _ = portfolio_metrics.ledoit_wolf(shared.to_numpy())
+        shares = portfolio_metrics.risk_contributions(np.array(list(weights.values())), cov)
+        risk_share = dict(zip(weights, (float(share) for share in shares)))
+    for p in positions:
+        p["risk_share"] = risk_share[p["ticker"]]
+    for row in sector_rows:
+        parts = [p["risk_share"] for p in positions if p["sector"] == row["sector"]]
+        row["risk_share"] = sum(parts) if all(part is not None for part in parts) else None
     betas = {t: metrics.beta(returns[t], returns[NIFTY]) for t in weights}
     known = {t: b for t, b in betas.items() if b is not None}
     for p in positions:

@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import router
 
@@ -28,6 +29,9 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# Large JSON answers (insights, ideas, alerts) travel compressed.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Register routers
 from app.portfolio.router import router as portfolio_router  # noqa: E402
 app.include_router(portfolio_router)
@@ -50,7 +54,9 @@ app.include_router(broker_router)
 from app.advisor.router import router as advisor_router  # noqa: E402
 app.include_router(advisor_router)
 
-from app.tools import gdelt, market, vector_store  # noqa: E402
+import threading  # noqa: E402
+
+from app.tools import gdelt, market, sentiment, vector_store  # noqa: E402
 
 
 @app.on_event("startup")
@@ -60,6 +66,14 @@ def start_background_work() -> None:
     vector_store.warm_up_in_background()
     gdelt.start_background_scan()
     market.warm_up_in_background()
+    # Loading the sentiment model takes seconds; do it now, not inside the first request.
+    threading.Thread(target=sentiment.backend, daemon=True, name="warm-sentiment").start()
+
+
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+def root() -> dict[str, str]:
+    """The host's uptime check asks for this path."""
+    return {"status": "ok", "service": "Financial Intelligence Terminal API"}
 
 
 @app.get("/health")

@@ -13,6 +13,7 @@ from app.agents.nodes import GENERAL_NEWS_QUERY, HORIZON_SESSIONS
 from app.ingestion.news import get_news
 from app.risk import exposure
 from app.tools import gdelt, health, sentiment, vector_store
+from app.tools.cache import cached
 from app.tools.market import get_history, get_indices, get_macro, normalise_holdings
 from app.tools.weather import get_weather_outlook
 
@@ -35,7 +36,12 @@ def _round(value, digits: int = 2) -> float | None:
 @router.post("/overview")
 def overview(request: OverviewRequest) -> dict:
     """VaR, beta and concentration for the holdings at the latest close."""
-    holdings, source = normalise_holdings(request.holdings)
+    return _overview(request.holdings)
+
+
+@cached(60)
+def _overview(raw_holdings: list[dict] | None) -> dict:
+    holdings, source = normalise_holdings(raw_holdings)
     closes, price_source = get_history([h["ticker"] for h in holdings])
     if closes is None:
         raise HTTPException(status_code=503, detail="Price history is unavailable right now.")
@@ -178,6 +184,11 @@ def streams() -> dict:
     """The state of each feed and model: live, degraded (a fallback is in use),
     down, or idle (not asked yet). Nothing here is assumed; every row reports the
     outcome of a real request."""
+    return _streams()
+
+
+@cached(20)
+def _streams() -> dict:
     _refresh_stale_feeds()
     seen = health.snapshot()
     # Quotes and index levels come from the same source; report whichever answered last.

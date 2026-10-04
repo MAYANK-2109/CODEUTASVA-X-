@@ -151,11 +151,17 @@ def _download(tickers: list[str], **kwargs) -> pd.DataFrame:
     return _downloads.submit(_fetch, tickers, **kwargs).result(timeout=DOWNLOAD_DEADLINE_SECONDS)
 
 
+def _columns() -> dict[str, tuple[float, pd.Series]]:
+    """Each ticker's downloaded closes with the time they arrived."""
+    return _memory.setdefault("columns", {})
+
+
 def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
     """Daily adjusted closes since 2013 for the tickers plus the Nifty.
 
-    Returns (closes, source) where source is "live", "cache" (saved copy used
-    because the live fetch failed) or "unavailable".
+    Prices are kept per ticker, so a request only downloads the tickers no
+    earlier request fetched recently. Returns (closes, source) where source is
+    "live", "cache" (saved copy used because the live fetch failed) or "unavailable".
     """
     wanted = sorted(set(tickers) | {NIFTY})
     key = hashlib.sha1(",".join(wanted).encode()).hexdigest()[:16]
@@ -165,24 +171,34 @@ def get_history(tickers: list[str]) -> tuple[pd.DataFrame | None, str]:
 
     cache_file = CACHE_DIR / f"history_{key}.csv"
     started = time.perf_counter()
+    columns = _columns()
+    need = [t for t in wanted if t not in columns or time.time() - columns[t][0] >= HISTORY_TTL_SECONDS]
     try:
-        closes = _download(wanted, start=HISTORY_START)
-        # On a poor connection a batch download can come back with some
-        # tickers blank. Ask once more for just those before accepting it.
-        blank = [t for t in wanted if t not in closes.columns or closes[t].notna().sum() == 0]
-        if blank and len(blank) < len(wanted):
-            retry = _download(blank, start=HISTORY_START)
-            for ticker in blank:
-                if ticker in retry.columns and retry[ticker].notna().sum() > 0:
-                    closes[ticker] = retry[ticker]
-        if closes.empty or NIFTY not in closes.columns or closes[NIFTY].notna().sum() == 0:
+        if need:
+            fetched = _download(need, start=HISTORY_START)
+            # On a poor connection a batch download can come back with some
+            # tickers blank. Ask once more for just those before accepting it.
+            blank = [t for t in need if t not in fetched.columns or fetched[t].notna().sum() == 0]
+            if blank and len(blank) < len(need):
+                retry = _download(blank, start=HISTORY_START)
+                for ticker in blank:
+                    if ticker in retry.columns and retry[ticker].notna().sum() > 0:
+                        fetched[ticker] = retry[ticker]
+            now = time.time()
+            for ticker in need:
+                if ticker in fetched.columns and fetched[ticker].notna().sum() > 0:
+                    columns[ticker] = (now, fetched[ticker].dropna())
+        if NIFTY not in columns:
             raise ValueError("price history is missing the index")
-        closes = closes.sort_index().ffill()
+        closes = pd.DataFrame({t: columns[t][1] for t in wanted if t in columns})
+        # A ticker with no prices stays in the frame as an empty column, as a download would return it.
+        closes = closes.reindex(columns=wanted).sort_index().ffill()
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         closes.to_csv(cache_file)
         _memory[key] = (time.time(), closes)
-        health.record("history", True, ms=(time.perf_counter() - started) * 1000, items=len(wanted),
-                      detail=f"closes to {closes.index[-1].date()}")
+        if need:
+            health.record("history", True, ms=(time.perf_counter() - started) * 1000, items=len(need),
+                          detail=f"closes to {closes.index[-1].date()}")
         return closes, "live"
     except Exception as exc:
         if cache_file.exists():

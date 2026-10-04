@@ -8,6 +8,7 @@ import NotificationBell from '../components/NotificationBell'
 import { RiskOverviewTiles, RiskAlertList, RiskStreamsCard } from '../components/RiskTerminal'
 import { Skeleton } from '../components/Skeleton'
 import { IconTriangleUp, IconTriangleDown } from '../components/Icons'
+import { AgentGraphCard, MarketRiskRow } from '../components/DashboardIntel'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -713,6 +714,12 @@ const DashboardPage: React.FC = () => {
         <div className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1600px] w-full mx-auto flex flex-col gap-6">
           {/* Risk first: what could be lost, where exposure sits, and active alerts summary */}
           <RiskOverviewTiles backendUrl={backendUrl} refreshKey={refreshKey} />
+
+          {/* Interactive price and weather chart beside the risk exposure breakdown */}
+          <MarketRiskRow backendUrl={backendUrl} refreshKey={refreshKey} />
+
+          {/* Live multi-agent execution graph with the agents' trade and hedge recommendation */}
+          <AgentGraphCard backendUrl={backendUrl} />
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.ingestion.news import HOLDINGS_WINDOW_DAYS, get_sector_news
 from app.ingestion.prices import get_latest_prices
 from app.tools import resolver, sectors, vector_store
+from app.tools.cache import cached
 from app.tools.market import get_indices, market_trend, normalise_holdings
 
 PORTFOLIO_FILE = Path(__file__).resolve().parent.parent / "data" / "portfolio.json"
@@ -62,6 +63,7 @@ class NewsRequest(BaseModel):
     limit: int = Field(default=30, ge=1, le=50)
 
 
+@cached(300)
 def _sector_news(raw_holdings: list[dict] | None, limit: int) -> dict:
     holdings, source = normalise_holdings(raw_holdings)
     # A holding outside the built-in sector map has its sector looked up once.
